@@ -10,6 +10,26 @@ class SalesTransaction extends Model
 {
     protected $table = 'tbl_sales_transactions';
 
+    protected $fillable = [
+        'transaction_no',
+        'sale_type',
+        'online_platform',
+        'total_amount',
+        'payment_status',
+        'cashier_id',
+        'transaction_date',
+    ];
+
+    public $timestamps = false;
+
+    protected function casts(): array
+    {
+        return [
+            'total_amount' => 'decimal:2',
+            'transaction_date' => 'datetime',
+        ];
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cashier_id');

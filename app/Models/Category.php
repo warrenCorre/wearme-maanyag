@@ -9,6 +9,13 @@ class Category extends Model
 {
     protected $table = 'tbl_categories';
 
+    protected $fillable = [
+        'category_name',
+        'status',
+    ];
+
+    public $timestamps = false;
+
     public function products(): HasMany
     {
         return $this->hasMany(Product::class, 'category_id');

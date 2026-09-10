@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Wear Me Maanyag</title>
+    <title>Forgot Password - Wear Me Maanyag</title>
     @vite('resources/css/app.css')
 </head>
 
 <body>
     <div>
         <h1>Wear Me Maanyag</h1>
-        <h2>Login</h2>
+        <h2>Forgot Password</h2>
+
+        <p>Enter your email address and we will send a password reset link if an account exists.</p>
 
         @if (session('status'))
             <div role="status">{{ session('status') }}</div>
@@ -26,7 +28,7 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('login.authenticate') }}">
+        <form method="POST" action="{{ route('password.email') }}">
             @csrf
 
             <div>
@@ -40,21 +42,11 @@
                 >
             </div>
 
-            <div>
-                <label for="password">Password</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    required
-                >
-            </div>
-
-            <button type="submit">Login</button>
+            <button type="submit">Send Password Reset Link</button>
         </form>
 
         <p>
-            <a href="{{ route('password.request') }}">Forgot your password?</a>
+            <a href="{{ route('login') }}">Back to Login</a>
         </p>
     </div>
 </body>
