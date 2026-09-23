@@ -15,7 +15,7 @@ class SalesTransactionController extends Controller
 {
     public function index(): View
     {
-        $transactions = SalesTransaction::with(['items', 'user'])
+        $transactions = SalesTransaction::with(['items.product', 'user'])
             ->orderByDesc('transaction_date')
             ->limit(25)
             ->get();

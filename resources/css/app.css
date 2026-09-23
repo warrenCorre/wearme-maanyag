@@ -4,3 +4,23 @@
 @source "../../storage/framework/views/*.php";
 @source "../**/*.blade.php";
 @source "../**/*.js";
+
+@media print {
+    body * {
+        visibility: hidden !important;
+    }
+
+    .receipt-print-area,
+    .receipt-print-area * {
+        visibility: visible !important;
+    }
+
+    .receipt-print-area {
+        position: absolute !important;
+        inset: 0 auto auto 0 !important;
+        width: 100% !important;
+        max-width: 420px !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+    }
+}

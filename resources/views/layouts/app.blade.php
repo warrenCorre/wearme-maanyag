@@ -4,7 +4,7 @@
         ['label' => 'Dashboard', 'icon' => '⌂', 'route' => 'dashboard', 'pattern' => 'dashboard', 'owner' => true],
         ['label' => 'Products Management', 'icon' => '▣', 'route' => 'products.index', 'pattern' => 'products.*', 'owner' => true],
         ['label' => 'Sales Transaction', 'icon' => '▤', 'route' => 'sales', 'pattern' => 'sales', 'owner' => false],
-        ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => null, 'pattern' => null, 'owner' => false],
+        ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => 'unpaid.index', 'pattern' => 'unpaid.*', 'owner' => true],
         ['label' => 'Reports', 'icon' => '▥', 'route' => null, 'pattern' => null, 'owner' => true],
         ['label' => 'Cashier Management', 'icon' => '♙', 'route' => null, 'pattern' => null, 'owner' => true],
     ];
@@ -71,6 +71,18 @@
                             @endif
                         @endif
                     @endforeach
+
+                    @if (!$isOwner)
+                        <div class="flex cursor-not-allowed items-center gap-3 rounded-xl border-l-4 border-transparent px-4 py-3 text-sm font-bold text-slate-400" title="This module is currently available for Store Owners first">
+                            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-lg">₱</span>
+                            <span>Unpaid Transactions</span>
+                        </div>
+                        @php($receiptActive = request()->routeIs('receipts.*'))
+                        <a class="group flex items-center gap-3 rounded-xl border-l-4 px-4 py-3 text-sm font-bold transition {{ $receiptActive ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-transparent text-slate-700 hover:border-slate-300 hover:bg-slate-50' }}" href="{{ route('receipts.index') }}" @if ($receiptActive) aria-current="page" @endif>
+                            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-lg {{ $receiptActive ? 'bg-rose-100' : 'bg-slate-100 group-hover:bg-white' }}">R</span>
+                            <span>Receipt Generation</span>
+                        </a>
+                    @endif
                 </nav>
 
                 <div class="border-t border-slate-200 px-4 py-4">

@@ -5,7 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\SalesTransactionController;
+use App\Http\Controllers\UnpaidPaymentController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -98,3 +100,31 @@ Route::get('/sales/create', [SalesTransactionController::class, 'create'])
 Route::post('/sales', [SalesTransactionController::class, 'store'])
     ->middleware(['auth', 'role:store_owner,cashier'])
     ->name('sales.store');
+
+Route::get('/receipt-generation/{transaction?}', [ReceiptController::class, 'index'])
+    ->middleware(['auth', 'role:cashier'])
+    ->name('receipts.index');
+
+Route::get('/sales/{transaction}/receipt/download', [ReceiptController::class, 'download'])
+    ->middleware(['auth', 'role:store_owner,cashier'])
+    ->name('receipts.download');
+
+Route::get('/unpaid-transactions', [UnpaidPaymentController::class, 'index'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('unpaid.index');
+
+Route::get('/unpaid-transactions/create', [UnpaidPaymentController::class, 'create'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('unpaid.create');
+
+Route::post('/unpaid-transactions', [UnpaidPaymentController::class, 'store'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('unpaid.store');
+
+Route::patch('/unpaid-transactions/{unpaidPayment}/payment', [UnpaidPaymentController::class, 'updatePayment'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('unpaid.payment.update');
+
+Route::patch('/unpaid-transactions/{transaction}/update', [UnpaidPaymentController::class, 'updateTransaction'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('unpaid.transaction.update');
