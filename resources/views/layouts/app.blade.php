@@ -6,7 +6,7 @@
         ['label' => 'Sales Transaction', 'icon' => '▤', 'route' => 'sales', 'pattern' => 'sales', 'owner' => false],
         ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => 'unpaid.index', 'pattern' => 'unpaid.*', 'owner' => true],
         ['label' => 'Reports', 'icon' => '▥', 'route' => 'reports.index', 'pattern' => 'reports.*', 'owner' => true],
-        ['label' => 'Cashier Management', 'icon' => '♙', 'route' => null, 'pattern' => null, 'owner' => true],
+        ['label' => 'Cashier Management', 'icon' => '♙', 'route' => 'cashiers.index', 'pattern' => 'cashiers.*', 'owner' => true],
     ];
 @endphp
 
