@@ -1,13 +1,14 @@
 <?php
 
 use App\Http\Controllers\AuthController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ReceiptController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SalesTransactionController;
 use App\Http\Controllers\UnpaidPaymentController;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -88,6 +89,18 @@ Route::delete('/products/{productId}/permanent', [ProductController::class, 'per
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'role:store_owner'])
     ->name('dashboard');
+
+Route::get('/reports', [ReportController::class, 'index'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.index');
+
+Route::get('/reports/sales/export', [ReportController::class, 'exportSales'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.sales.export');
+
+Route::get('/reports/inventory/export', [ReportController::class, 'exportInventory'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.inventory.export');
 
 Route::get('/sales', [SalesTransactionController::class, 'index'])
     ->middleware(['auth', 'role:store_owner,cashier'])

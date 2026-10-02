@@ -5,7 +5,7 @@
         ['label' => 'Products Management', 'icon' => '▣', 'route' => 'products.index', 'pattern' => 'products.*', 'owner' => true],
         ['label' => 'Sales Transaction', 'icon' => '▤', 'route' => 'sales', 'pattern' => 'sales', 'owner' => false],
         ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => 'unpaid.index', 'pattern' => 'unpaid.*', 'owner' => true],
-        ['label' => 'Reports', 'icon' => '▥', 'route' => null, 'pattern' => null, 'owner' => true],
+        ['label' => 'Reports', 'icon' => '▥', 'route' => 'reports.index', 'pattern' => 'reports.*', 'owner' => true],
         ['label' => 'Cashier Management', 'icon' => '♙', 'route' => null, 'pattern' => null, 'owner' => true],
     ];
 @endphp
