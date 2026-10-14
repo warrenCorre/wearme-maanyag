@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="border-b border-slate-200 px-5 py-5">
-                    <div class="flex items-center gap-3">
+                    <a class="flex items-center gap-3 rounded-xl transition hover:bg-slate-50" href="{{ route('profile.edit') }}" title="My Profile">
                         <div class="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
                             {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
                         </div>
@@ -46,7 +46,7 @@
                             <p class="truncate text-sm font-bold text-slate-900">{{ auth()->user()->name }}</p>
                             <p class="text-xs font-medium capitalize text-slate-500">{{ str_replace('_', ' ', auth()->user()->role) }}</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <nav class="flex-1 space-y-1 px-3 py-5" aria-label="Main navigation">
