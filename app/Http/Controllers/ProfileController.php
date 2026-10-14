@@ -11,6 +11,11 @@ use Illuminate\View\View;
 
 class ProfileController extends Controller
 {
+    public function show(): View
+    {
+        return view('profile.show', ['user' => Auth::user()]);
+    }
+
     public function edit(): View
     {
         return view('profile.edit', ['user' => Auth::user()]);
@@ -37,7 +42,7 @@ class ProfileController extends Controller
 
         $user->update($validated);
 
-        return redirect()->route('profile.edit')
+        return redirect()->route('profile.show')
             ->with('status', 'Profile updated successfully.');
     }
 }

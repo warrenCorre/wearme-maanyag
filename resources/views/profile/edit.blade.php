@@ -1,8 +1,12 @@
 @extends('layouts.app')
 
-@section('title', 'My Profile - Wear Me Maanyag')
-@section('page_title', 'My Profile')
+@section('title', 'Edit Profile - Wear Me Maanyag')
+@section('page_title', 'Edit Profile')
 @section('page_description', 'Update your own name, email, and password.')
+
+@section('header_actions')
+    <a class="rounded-xl border-2 border-slate-900 bg-white px-4 py-2.5 text-sm font-black text-slate-800 transition hover:bg-slate-900 hover:text-white" href="{{ route('profile.show') }}">Back to Profile</a>
+@endsection
 
 @section('content')
     <form class="space-y-6" method="POST" action="{{ route('profile.update') }}">

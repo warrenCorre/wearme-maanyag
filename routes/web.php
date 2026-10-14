@@ -36,7 +36,11 @@ Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
-Route::get('/profile', [ProfileController::class, 'edit'])
+Route::get('/profile', [ProfileController::class, 'show'])
+    ->middleware('auth')
+    ->name('profile.show');
+
+Route::get('/profile/edit', [ProfileController::class, 'edit'])
     ->middleware('auth')
     ->name('profile.edit');
 
