@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\UnpaidPayment;
 
 class SalesTransaction extends Model
 {
@@ -33,7 +32,7 @@ class SalesTransaction extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'cashier_id');
+        return $this->belongsTo(User::class, 'cashier_id')->withTrashed();
     }
 
     public function items(): HasMany

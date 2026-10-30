@@ -5,8 +5,8 @@
         ['label' => 'Products Management', 'icon' => '▣', 'route' => 'products.index', 'pattern' => 'products.*', 'owner' => true],
         ['label' => 'Sales Transaction', 'icon' => '▤', 'route' => 'sales', 'pattern' => 'sales', 'owner' => false],
         ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => 'unpaid.index', 'pattern' => 'unpaid.*', 'owner' => true],
-        ['label' => 'Reports', 'icon' => '▥', 'route' => null, 'pattern' => null, 'owner' => true],
-        ['label' => 'Cashier Management', 'icon' => '♙', 'route' => null, 'pattern' => null, 'owner' => true],
+        ['label' => 'Reports', 'icon' => '▥', 'route' => 'reports.index', 'pattern' => 'reports.*', 'owner' => true],
+        ['label' => 'Cashier Management', 'icon' => '♙', 'route' => 'cashiers.index', 'pattern' => 'cashiers.*', 'owner' => true],
     ];
 @endphp
 
@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="border-b border-slate-200 px-5 py-5">
-                    <div class="flex items-center gap-3">
+                    <a class="flex items-center gap-3 rounded-xl transition hover:bg-slate-50" href="{{ route('profile.show') }}" title="My Profile">
                         <div class="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
                             {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
                         </div>
@@ -46,7 +46,7 @@
                             <p class="truncate text-sm font-bold text-slate-900">{{ auth()->user()->name }}</p>
                             <p class="text-xs font-medium capitalize text-slate-500">{{ str_replace('_', ' ', auth()->user()->role) }}</p>
                         </div>
-                    </div>
+                    </a>
                 </div>
 
                 <nav class="flex-1 space-y-1 px-3 py-5" aria-label="Main navigation">

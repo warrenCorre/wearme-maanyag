@@ -1,13 +1,16 @@
 <?php
 
 use App\Http\Controllers\AuthController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CashierController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReceiptController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SalesTransactionController;
 use App\Http\Controllers\UnpaidPaymentController;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -32,6 +35,18 @@ Route::post('/login', [AuthController::class, 'login'])->name('login.authenticat
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
+
+Route::get('/profile', [ProfileController::class, 'show'])
+    ->middleware('auth')
+    ->name('profile.show');
+
+Route::get('/profile/edit', [ProfileController::class, 'edit'])
+    ->middleware('auth')
+    ->name('profile.edit');
+
+Route::patch('/profile', [ProfileController::class, 'update'])
+    ->middleware('auth')
+    ->name('profile.update');
 
 Route::get('/categories', [CategoryController::class, 'index'])
     ->middleware(['auth', 'role:store_owner'])
@@ -89,6 +104,18 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'role:store_owner'])
     ->name('dashboard');
 
+Route::get('/reports', [ReportController::class, 'index'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.index');
+
+Route::get('/reports/sales/export', [ReportController::class, 'exportSales'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.sales.export');
+
+Route::get('/reports/inventory/export', [ReportController::class, 'exportInventory'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('reports.inventory.export');
+
 Route::get('/sales', [SalesTransactionController::class, 'index'])
     ->middleware(['auth', 'role:store_owner,cashier'])
     ->name('sales');
@@ -128,3 +155,31 @@ Route::patch('/unpaid-transactions/{unpaidPayment}/payment', [UnpaidPaymentContr
 Route::patch('/unpaid-transactions/{transaction}/update', [UnpaidPaymentController::class, 'updateTransaction'])
     ->middleware(['auth', 'role:store_owner'])
     ->name('unpaid.transaction.update');
+
+Route::get('/cashiers', [CashierController::class, 'index'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.index');
+
+Route::get('/cashiers/create', [CashierController::class, 'create'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.create');
+
+Route::post('/cashiers', [CashierController::class, 'store'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.store');
+
+Route::get('/cashiers/{cashier}/edit', [CashierController::class, 'edit'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.edit');
+
+Route::put('/cashiers/{cashier}', [CashierController::class, 'update'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.update');
+
+Route::patch('/cashiers/{cashier}/status', [CashierController::class, 'toggleStatus'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.status');
+
+Route::delete('/cashiers/{cashier}', [CashierController::class, 'destroy'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('cashiers.destroy');
