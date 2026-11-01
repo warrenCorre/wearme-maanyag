@@ -1,3 +1,25 @@
+# Project Rules
+
+## Technology
+- Backend: Laravel
+- Frontend: Blade and Tailwind CSS
+- Database: MySQL
+
+## Working Rules
+- Inspect existing code before editing.
+- Follow the existing architecture.
+- Do not rewrite unrelated code.
+- Ask before destructive database migrations.
+- Never expose secrets or .env values.
+- Run relevant tests after changes.
+- Explain modifications and remaining issues.
+
+## Quality
+- Keep code readable and maintainable.
+- Validate user inputs.
+- Enforce authentication and permissions.
+- Avoid unnecessary dependencies.
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
