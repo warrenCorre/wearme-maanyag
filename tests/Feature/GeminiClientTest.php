@@ -54,6 +54,44 @@ class GeminiClientTest extends TestCase
         );
     }
 
+    public function test_it_sends_a_structured_response_format_when_a_schema_is_supplied(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/v1beta/interactions' => Http::response([
+                'status' => 'completed',
+                'steps' => [
+                    [
+                        'type' => 'model_output',
+                        'content' => [
+                            ['type' => 'text', 'text' => '{"answer":"Synthetic answer."}'],
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'answer' => ['type' => 'string'],
+            ],
+            'required' => ['answer'],
+        ];
+
+        $answer = app(GeminiClient::class)->generateText(
+            'Summarize synthetic inventory.',
+            'Use only supplied facts.',
+            $schema,
+        );
+
+        $this->assertSame('{"answer":"Synthetic answer."}', $answer);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://generativelanguage.googleapis.com/v1beta/interactions'
+            && $request['response_format']['type'] === 'text'
+            && $request['response_format']['mime_type'] === 'application/json'
+            && $request['response_format']['schema'] === $schema
+        );
+    }
+
     public function test_it_sends_embedding_request_and_returns_vector_values(): void
     {
         Http::fake([

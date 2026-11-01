@@ -11,8 +11,14 @@ class GeminiClient
 {
     private const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/';
 
-    public function generateText(string $prompt, ?string $systemInstruction = null): string
-    {
+    /**
+     * @param  array<string, mixed>|null  $responseSchema
+     */
+    public function generateText(
+        string $prompt,
+        ?string $systemInstruction = null,
+        ?array $responseSchema = null,
+    ): string {
         $payload = [
             'model' => config('services.gemini.model'),
             'input' => $prompt,
@@ -21,6 +27,14 @@ class GeminiClient
 
         if ($systemInstruction !== null) {
             $payload['system_instruction'] = $systemInstruction;
+        }
+
+        if ($responseSchema !== null) {
+            $payload['response_format'] = [
+                'type' => 'text',
+                'mime_type' => 'application/json',
+                'schema' => $responseSchema,
+            ];
         }
 
         $response = $this->request()->post('interactions', $payload)->throw();

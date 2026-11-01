@@ -59,6 +59,21 @@ class AssistantPromptBuilderTest extends TestCase
                     'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
                     'internal_note' => 'Not approved for model context.',
                 ],
+                'as_of' => [
+                    'sales' => '2026-10-15',
+                    'inventory' => '2026-11-02',
+                    'best_sellers' => '2026-11-02',
+                    'unpaid_summary' => '2026-11-02',
+                    'internal_note' => 'Not approved for model context.',
+                ],
+                'allowed_sources' => [
+                    [
+                        'type' => 'sales',
+                        'label' => 'Sales summary',
+                        'as_of' => '2026-10-15',
+                        'internal_note' => 'Not approved for model context.',
+                    ],
+                ],
                 'unpaid_records' => [
                     ['customer_name' => 'Synthetic Customer'],
                 ],
@@ -86,10 +101,28 @@ class AssistantPromptBuilderTest extends TestCase
             'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
             'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
         ], $safeContext['scopes']);
+        $this->assertSame([
+            'sales' => '2026-10-15',
+            'inventory' => '2026-11-02',
+            'best_sellers' => '2026-11-02',
+            'unpaid_summary' => '2026-11-02',
+        ], $safeContext['as_of']);
+        $this->assertSame([
+            [
+                'type' => 'sales',
+                'label' => 'Sales summary',
+                'as_of' => '2026-10-15',
+            ],
+        ], $safeContext['allowed_sources']);
         $this->assertArrayNotHasKey('internal_note', $safeContext['scopes']);
+        $this->assertArrayNotHasKey('internal_note', $safeContext['as_of']);
+        $this->assertArrayNotHasKey('internal_note', $safeContext['allowed_sources'][0]);
         $this->assertStringContainsString("Respect the context's `scopes` labels", $prompt['system_instruction']);
         $this->assertStringContainsString('best sellers use paid transactions only and are all-time', $prompt['system_instruction']);
         $this->assertStringContainsString('linked transactions', $prompt['system_instruction']);
+        $this->assertStringContainsString('Return only one JSON object', $prompt['system_instruction']);
+        $this->assertStringContainsString('allowed_sources', $prompt['system_instruction']);
+        $this->assertStringContainsString('Do not include any number', $prompt['system_instruction']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['sales']);
         $this->assertArrayNotHasKey('customer_contact', $safeContext['inventory']['stats']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['inventory']['low_stock_products'][0]);

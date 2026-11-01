@@ -20,11 +20,13 @@ class AssistantContextService
      *     inventory: array{stats: array{product_count: int, total_units: int, stock_value: float}, low_stock_products: array<int, array{product_name: string, quantity: int, low_stock_threshold: int}>},
      *     best_sellers: array<int, array{product_name: string, units_sold: int, sales_total: float}>,
      *     unpaid_summary: array{pending_transaction_count: int, pending_record_count: int, outstanding_balance: float},
+     *     as_of: array{sales: string, inventory: string, best_sellers: string, unpaid_summary: string},
      *     scopes: array{sales: string, best_sellers: string, unpaid_summary: string}
      * }
      */
     public function build(string $period, CarbonInterface $date): array
     {
+        $asOf = now()->toDateString();
         $salesReport = $this->reportService->salesReport($period, $date);
         $lowStockProducts = $this->reportService->lowStockProducts(10);
         $unpaidSummary = UnpaidPayment::query()
@@ -55,6 +57,12 @@ class AssistantContextService
                 'pending_transaction_count' => (int) $unpaidSummary->pending_transaction_count,
                 'pending_record_count' => (int) $unpaidSummary->pending_record_count,
                 'outstanding_balance' => (float) $unpaidSummary->outstanding_balance,
+            ],
+            'as_of' => [
+                'sales' => $date->toDateString(),
+                'inventory' => $asOf,
+                'best_sellers' => $asOf,
+                'unpaid_summary' => $asOf,
             ],
             'scopes' => [
                 'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',

@@ -18,6 +18,8 @@ class AssistantContextServiceTest extends TestCase
 
     public function test_it_builds_approved_aggregates_without_customer_details(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
+
         $ownerId = DB::table('tbl_users')->insertGetId([
             'name' => 'Synthetic Owner',
             'email' => 'owner@example.test',
@@ -144,6 +146,12 @@ class AssistantContextServiceTest extends TestCase
             'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
             'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
         ], $context['scopes']);
+        $this->assertSame([
+            'sales' => '2026-10-15',
+            'inventory' => '2026-11-02',
+            'best_sellers' => '2026-11-02',
+            'unpaid_summary' => '2026-11-02',
+        ], $context['as_of']);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($context));
         $this->assertArrayNotHasKey('customer_name', $context['unpaid_summary']);
         $this->assertArrayNotHasKey('customer_contact', $context['unpaid_summary']);
@@ -151,6 +159,8 @@ class AssistantContextServiceTest extends TestCase
 
     public function test_it_excludes_unlinked_pending_records_from_the_linked_transaction_count(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
+
         $ownerId = DB::table('tbl_users')->insertGetId([
             'name' => 'Synthetic Owner',
             'email' => 'owner@example.test',
@@ -190,6 +200,12 @@ class AssistantContextServiceTest extends TestCase
             'pending_record_count' => 1,
             'outstanding_balance' => 7.0,
         ], $context['unpaid_summary']);
+        $this->assertSame([
+            'sales' => '2026-10-15',
+            'inventory' => '2026-11-02',
+            'best_sellers' => '2026-11-02',
+            'unpaid_summary' => '2026-11-02',
+        ], $context['as_of']);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($context));
         $this->assertArrayNotHasKey('customer_name', $context['unpaid_summary']);
         $this->assertArrayNotHasKey('customer_contact', $context['unpaid_summary']);
