@@ -32,7 +32,8 @@ class AssistantKnowledgeRecordBuilderTest extends TestCase
             ],
             'best_sellers' => [['product_name' => 'Synthetic Shirt', 'units_sold' => 5]],
             'unpaid_summary' => [
-                'pending_count' => 2,
+                'pending_transaction_count' => 1,
+                'pending_record_count' => 2,
                 'outstanding_balance' => 35.25,
                 'customer_name' => 'Synthetic Customer',
                 'customer_contact' => '0000000000',
@@ -53,7 +54,7 @@ class AssistantKnowledgeRecordBuilderTest extends TestCase
             ],
             [
                 'source_type' => 'unpaid_summary',
-                'content_text' => 'Unpaid summary; pending unpaid records: 2; outstanding balance: PHP 35.25.',
+                'content_text' => 'Unpaid summary; linked pending unpaid transactions: 1; pending unpaid payment records: 2; outstanding balance: PHP 35.25.',
             ],
         ], $records);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($records, JSON_THROW_ON_ERROR));
@@ -72,7 +73,7 @@ class AssistantKnowledgeRecordBuilderTest extends TestCase
             'inventory' => [
                 'stats' => ['product_count' => '2', 'total_units' => 3, 'stock_value' => 20.0],
             ],
-            'unpaid_summary' => ['pending_count' => 1, 'outstanding_balance' => INF],
+            'unpaid_summary' => ['pending_transaction_count' => 1, 'pending_record_count' => 2, 'outstanding_balance' => INF],
         ];
 
         $records = app(AssistantKnowledgeRecordBuilder::class)->build($context);
@@ -89,7 +90,7 @@ class AssistantKnowledgeRecordBuilderTest extends TestCase
                 'summary' => ['transaction_count' => 0, 'total_sales' => 0.0, 'average_sale' => 0.0],
             ],
             'inventory' => ['stats' => ['product_count' => 3]],
-            'unpaid_summary' => ['pending_count' => 0, 'outstanding_balance' => 0.0],
+            'unpaid_summary' => ['pending_transaction_count' => 0, 'pending_record_count' => 0, 'outstanding_balance' => 0.0],
         ];
 
         $records = app(AssistantKnowledgeRecordBuilder::class)->build($context);
@@ -101,8 +102,21 @@ class AssistantKnowledgeRecordBuilderTest extends TestCase
             ],
             [
                 'source_type' => 'unpaid_summary',
-                'content_text' => 'Unpaid summary; pending unpaid records: 0; outstanding balance: PHP 0.00.',
+                'content_text' => 'Unpaid summary; linked pending unpaid transactions: 0; pending unpaid payment records: 0; outstanding balance: PHP 0.00.',
             ],
         ], $records);
+    }
+
+    public function test_it_omits_unpaid_summary_when_linked_transaction_count_exceeds_pending_records(): void
+    {
+        $records = app(AssistantKnowledgeRecordBuilder::class)->build([
+            'unpaid_summary' => [
+                'pending_transaction_count' => 3,
+                'pending_record_count' => 2,
+                'outstanding_balance' => 25.0,
+            ],
+        ]);
+
+        $this->assertSame([], $records);
     }
 }

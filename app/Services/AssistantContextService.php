@@ -19,7 +19,7 @@ class AssistantContextService
      *     sales: array{period: string, date: string, summary: array{transaction_count: int, total_sales: float, average_sale: float}},
      *     inventory: array{stats: array{product_count: int, total_units: int, stock_value: float}, low_stock_products: array<int, array{product_name: string, quantity: int, low_stock_threshold: int}>},
      *     best_sellers: array<int, array{product_name: string, units_sold: int, sales_total: float}>,
-     *     unpaid_summary: array{pending_count: int, outstanding_balance: float}
+     *     unpaid_summary: array{pending_transaction_count: int, pending_record_count: int, outstanding_balance: float}
      * }
      */
     public function build(string $period, CarbonInterface $date): array
@@ -28,7 +28,8 @@ class AssistantContextService
         $lowStockProducts = $this->reportService->lowStockProducts(10);
         $unpaidSummary = UnpaidPayment::query()
             ->where('status', 'pending')
-            ->selectRaw('COUNT(*) as pending_count')
+            ->selectRaw('COUNT(DISTINCT transaction_id) as pending_transaction_count')
+            ->selectRaw('COUNT(*) as pending_record_count')
             ->selectRaw('COALESCE(SUM(balance), 0) as outstanding_balance')
             ->first();
 
@@ -50,7 +51,8 @@ class AssistantContextService
             ],
             'best_sellers' => $this->bestSellers(),
             'unpaid_summary' => [
-                'pending_count' => (int) $unpaidSummary->pending_count,
+                'pending_transaction_count' => (int) $unpaidSummary->pending_transaction_count,
+                'pending_record_count' => (int) $unpaidSummary->pending_record_count,
                 'outstanding_balance' => (float) $unpaidSummary->outstanding_balance,
             ],
         ];

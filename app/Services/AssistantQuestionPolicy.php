@@ -78,7 +78,7 @@ class AssistantQuestionPolicy
                 'unpaid_summary',
                 null,
                 $date,
-                'Report only aggregate pending unpaid transaction counts and outstanding balances using the verified context.',
+                'Report only aggregate linked pending unpaid transaction counts, pending unpaid payment record counts, and outstanding balances using the verified context. Never treat unlinked payment records as transactions.',
             );
         }
 
