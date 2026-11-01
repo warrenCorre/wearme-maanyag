@@ -53,6 +53,12 @@ class AssistantPromptBuilderTest extends TestCase
                     'customer_name' => 'Synthetic Customer',
                     'customer_contact' => '0000000000',
                 ],
+                'scopes' => [
+                    'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+                    'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                    'internal_note' => 'Not approved for model context.',
+                ],
                 'unpaid_records' => [
                     ['customer_name' => 'Synthetic Customer'],
                 ],
@@ -75,6 +81,14 @@ class AssistantPromptBuilderTest extends TestCase
             'pending_record_count' => 2,
             'outstanding_balance' => 75,
         ], $safeContext['unpaid_summary']);
+        $this->assertSame([
+            'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+            'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+            'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+        ], $safeContext['scopes']);
+        $this->assertArrayNotHasKey('internal_note', $safeContext['scopes']);
+        $this->assertStringContainsString("Respect the context's `scopes` labels", $prompt['system_instruction']);
+        $this->assertStringContainsString('best sellers use paid transactions only and are all-time', $prompt['system_instruction']);
         $this->assertStringContainsString('linked transactions', $prompt['system_instruction']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['sales']);
         $this->assertArrayNotHasKey('customer_contact', $safeContext['inventory']['stats']);

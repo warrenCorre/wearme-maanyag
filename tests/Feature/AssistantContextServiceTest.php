@@ -139,6 +139,11 @@ class AssistantContextServiceTest extends TestCase
             'pending_record_count' => 2,
             'outstanding_balance' => 25.0,
         ], $context['unpaid_summary']);
+        $this->assertSame([
+            'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+            'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+            'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+        ], $context['scopes']);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($context));
         $this->assertArrayNotHasKey('customer_name', $context['unpaid_summary']);
         $this->assertArrayNotHasKey('customer_contact', $context['unpaid_summary']);

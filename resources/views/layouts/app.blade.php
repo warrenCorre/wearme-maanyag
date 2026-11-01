@@ -6,6 +6,7 @@
         ['label' => 'Sales Transaction', 'icon' => '▤', 'route' => 'sales', 'pattern' => 'sales', 'owner' => false],
         ['label' => 'Unpaid Transactions', 'icon' => '₱', 'route' => 'unpaid.index', 'pattern' => 'unpaid.*', 'owner' => true],
         ['label' => 'Reports', 'icon' => '▥', 'route' => 'reports.index', 'pattern' => 'reports.*', 'owner' => true],
+        ['label' => 'Maanyag Assistant', 'icon' => '◌', 'route' => 'assistant.index', 'pattern' => 'assistant.*', 'owner' => true],
         ['label' => 'Cashier Management', 'icon' => '♙', 'route' => 'cashiers.index', 'pattern' => 'cashiers.*', 'owner' => true],
     ];
 @endphp
@@ -87,13 +88,23 @@
                 </nav>
 
                 <div class="border-t border-slate-200 px-4 py-4">
-                    <div class="rounded-2xl border-2 border-slate-900 bg-amber-50 p-4">
-                        <div class="flex items-center gap-2 text-slate-900">
-                            <span class="text-2xl">◌</span>
-                            <span class="text-sm font-black">Maanyag Assistant</span>
+                    @if ($isOwner)
+                        <a class="block rounded-2xl border-2 border-slate-900 bg-amber-50 p-4 transition hover:bg-amber-100" href="{{ route('assistant.index') }}">
+                            <div class="flex items-center gap-2 text-slate-900">
+                                <span class="text-2xl">◌</span>
+                                <span class="text-sm font-black">Maanyag Assistant</span>
+                            </div>
+                            <p class="mt-2 text-xs font-medium leading-relaxed text-slate-600">Ask supported, read-only questions about sales, inventory, best sellers, and aggregate unpaid balances.</p>
+                        </a>
+                    @else
+                        <div class="rounded-2xl border-2 border-slate-900 bg-amber-50 p-4">
+                            <div class="flex items-center gap-2 text-slate-900">
+                                <span class="text-2xl">◌</span>
+                                <span class="text-sm font-black">Maanyag Assistant</span>
+                            </div>
+                            <p class="mt-2 text-xs font-medium leading-relaxed text-slate-600">Store Owner AI assistance is available to Store Owners.</p>
                         </div>
-                        <p class="mt-2 text-xs font-medium leading-relaxed text-slate-600">Store Owner AI assistance will appear here when its documented module is implemented.</p>
-                    </div>
+                    @endif
 
                     <form class="mt-4" method="POST" action="{{ route('logout') }}">
                         @csrf
