@@ -4,6 +4,9 @@ namespace App\Services;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use RuntimeException;
 
 class AssistantAnswerService
 {
@@ -12,10 +15,17 @@ class AssistantAnswerService
         private AssistantContextService $contextService,
         private AssistantPromptBuilder $promptBuilder,
         private GeminiClient $geminiClient,
+        private AssistantResponseValidator $responseValidator,
     ) {}
 
     /**
-     * @return array{status: 'declined'|'disabled'|'answered', message: string}
+     * @return array{
+     *     status: 'declined'|'disabled'|'answered'|'refused'|'invalid'|'unavailable',
+     *     message: string,
+     *     sources?: array<int, array{type: string, label: string, as_of: string}>,
+     *     answer_type?: string,
+     *     confidence?: string
+     * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null): array
     {
@@ -36,14 +46,43 @@ class AssistantAnswerService
         }
 
         $date = CarbonImmutable::parse($decision['date']);
+        $intent = $decision['intent'] ?? '';
         $context = $this->contextService->build($decision['period'] ?? 'monthly', $date);
-        $relevantContext = $this->contextForIntent($context, $decision['intent'] ?? '');
+        $relevantContext = $this->contextForIntent($context, $intent);
+        $allowedSources = $this->responseValidator->allowedSourcesFor($intent, $context);
+        $relevantContext['allowed_sources'] = $allowedSources;
         $prompt = $this->promptBuilder->build($decision['safe_question'] ?? '', $relevantContext);
-        $answer = $this->geminiClient->generateText($prompt['input'], $prompt['system_instruction']);
+
+        try {
+            $rawResponse = $this->geminiClient->generateText(
+                $prompt['input'],
+                $prompt['system_instruction'],
+                AssistantResponseValidator::RESPONSE_SCHEMA,
+            );
+        } catch (ConnectionException|RequestException|RuntimeException) {
+            return [
+                'status' => 'unavailable',
+                'message' => 'The assistant is temporarily unavailable. Please try again.',
+            ];
+        }
+
+        $validation = $this->responseValidator->validate($rawResponse, $relevantContext, $allowedSources);
+
+        if (! $validation['valid'] || $validation['response'] === null) {
+            return [
+                'status' => 'invalid',
+                'message' => 'The assistant could not produce a verified answer. Please try again.',
+            ];
+        }
+
+        $response = $validation['response'];
 
         return [
-            'status' => 'answered',
-            'message' => $answer,
+            'status' => $response['refusal'] ? 'refused' : 'answered',
+            'message' => $response['answer'],
+            'sources' => $response['sources'],
+            'answer_type' => $response['answer_type'],
+            'confidence' => $response['confidence'],
         ];
     }
 
@@ -53,7 +92,7 @@ class AssistantAnswerService
      */
     private function contextForIntent(array $context, string $intent): array
     {
-        return match ($intent) {
+        $payload = match ($intent) {
             'sales_summary' => $this->withScope(
                 ['sales' => $context['sales'] ?? []],
                 $context,
@@ -81,6 +120,36 @@ class AssistantAnswerService
             ),
             default => [],
         };
+
+        return $this->withAsOf($payload, $context, $intent);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function withAsOf(array $payload, array $context, string $intent): array
+    {
+        $key = match ($intent) {
+            'sales_summary' => 'sales',
+            'inventory_summary', 'low_stock' => 'inventory',
+            'best_sellers' => 'best_sellers',
+            'unpaid_summary' => 'unpaid_summary',
+            default => null,
+        };
+
+        if ($key === null) {
+            return $payload;
+        }
+
+        $asOf = is_array($context['as_of'] ?? null) ? $context['as_of'] : [];
+
+        if (is_string($asOf[$key] ?? null)) {
+            $payload['as_of'] = [$key => $asOf[$key]];
+        }
+
+        return $payload;
     }
 
     /**
