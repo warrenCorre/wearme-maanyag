@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CashierController;
 use App\Http\Controllers\CategoryController;
@@ -115,6 +116,14 @@ Route::get('/reports/sales/export', [ReportController::class, 'exportSales'])
 Route::get('/reports/inventory/export', [ReportController::class, 'exportInventory'])
     ->middleware(['auth', 'role:store_owner'])
     ->name('reports.inventory.export');
+
+Route::get('/assistant', [AssistantController::class, 'index'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('assistant.index');
+
+Route::post('/assistant', [AssistantController::class, 'ask'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('assistant.ask');
 
 Route::get('/sales', [SalesTransactionController::class, 'index'])
     ->middleware(['auth', 'role:store_owner,cashier'])

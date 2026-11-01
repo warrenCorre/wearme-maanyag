@@ -87,6 +87,11 @@ class AssistantAnswerServiceTest extends TestCase
                 ],
                 'best_sellers' => [],
                 'unpaid_summary' => ['pending_transaction_count' => 2, 'pending_record_count' => 3, 'outstanding_balance' => 90.0],
+                'scopes' => [
+                    'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+                    'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                ],
             ]);
 
         $capturedPrompt = '';
@@ -98,7 +103,10 @@ class AssistantAnswerServiceTest extends TestCase
 
                 return str_contains($prompt, 'Summarize monthly sales for 2026-11-01')
                     && str_contains($prompt, '125')
+                    && str_contains($prompt, 'All recorded sales transactions, including paid, unpaid, and partially paid.')
                     && ! str_contains($prompt, 'outstanding_balance')
+                    && ! str_contains($prompt, 'Paid sales transactions only')
+                    && ! str_contains($prompt, 'Pending unpaid payment records')
                     && str_contains($systemInstruction, 'calculated figures are authoritative');
             })
             ->andReturn('Synthetic sales summary.');
@@ -127,6 +135,11 @@ class AssistantAnswerServiceTest extends TestCase
                     'pending_record_count' => 2,
                     'outstanding_balance' => 25.0,
                 ],
+                'scopes' => [
+                    'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+                    'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                ],
                 'inventory' => ['low_stock_products' => [['product_name' => 'Synthetic Product']]],
             ]);
 
@@ -139,6 +152,9 @@ class AssistantAnswerServiceTest extends TestCase
 
                 return str_contains($prompt, 'linked pending unpaid transaction counts')
                     && str_contains($prompt, 'pending unpaid payment record counts')
+                    && str_contains($prompt, 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.')
+                    && ! str_contains($prompt, 'All recorded sales transactions')
+                    && ! str_contains($prompt, 'Paid sales transactions only')
                     && str_contains($systemInstruction, 'linked transactions');
             })
             ->andReturn('Synthetic unpaid summary.');
@@ -153,6 +169,50 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringContainsString('"pending_record_count": 2', $capturedPrompt);
         $this->assertStringNotContainsString('Synthetic Product', $capturedPrompt);
         $this->assertStringNotContainsString('How many unpaid transactions?', $capturedPrompt);
+    }
+
+    public function test_it_passes_only_the_best_sellers_scope_to_the_best_sellers_prompt(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')
+            ->once()
+            ->andReturn([
+                'best_sellers' => [
+                    ['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30.0],
+                ],
+                'scopes' => [
+                    'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+                    'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                ],
+            ]);
+
+        $capturedPrompt = '';
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')
+            ->once()
+            ->withArgs(function (string $prompt, string $systemInstruction) use (&$capturedPrompt): bool {
+                $capturedPrompt = $prompt;
+
+                return str_contains($prompt, 'Paid sales transactions only, all-time; not limited to the selected sales period.')
+                    && str_contains($prompt, 'Synthetic Jacket')
+                    && ! str_contains($prompt, 'All recorded sales transactions')
+                    && ! str_contains($prompt, 'Pending unpaid payment records')
+                    && str_contains($systemInstruction, 'best sellers use paid transactions only and are all-time');
+            })
+            ->andReturn('Synthetic best-seller summary.');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'List best-selling products',
+            CarbonImmutable::parse('2026-11-01'),
+        );
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertStringContainsString('Paid sales transactions only', $capturedPrompt);
+        $this->assertStringNotContainsString('All recorded sales transactions', $capturedPrompt);
+        $this->assertStringNotContainsString('Pending unpaid payment records', $capturedPrompt);
     }
 
     private function makeAnswerService(

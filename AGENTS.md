@@ -14,6 +14,11 @@
 - Run relevant tests after changes.
 - Explain modifications and remaining issues.
 
+## Cross-Model Development Handoff
+- When resuming after a model switch, compaction, or context loss, read `../WearMe_Maanyag_Whole_Directory_Understanding.md` for approved decisions, current progress, open gaps, and the next task. Check the current code and Git status rather than assuming the brain is fully up to date.
+- The brain is a handoff guide, not a substitute for source documents. For the task at hand, read the relevant sections of `../WearMe_Maanyag_Final_SRS.docx` (requirements), `../WearMe_Maanyag_Final_SDD.docx` (design/schema), and `../WearMe_Maanyag_Final_SPMP.docx` (process/testing). For assistant work, also consult `../AI_Assistant_Implementation_Plan.html` as a design guide, not automatic approval for optional features. Consult other referenced material when relevant; do not assume merely reading the brain loads those files.
+- Preserve established decisions and the same development direction across models. If the documents, brain, and code disagree, explain the difference and ask before changing course. Describe exact files and scope and obtain approval before each change; update the brain after approved feature steps. Do not rely on conversation history alone.
+
 ## Quality
 - Keep code readable and maintainable.
 - Validate user inputs.
