@@ -47,7 +47,8 @@ class AssistantPromptBuilderTest extends TestCase
                     ],
                 ],
                 'unpaid_summary' => [
-                    'pending_count' => 2,
+                    'pending_transaction_count' => 1,
+                    'pending_record_count' => 2,
                     'outstanding_balance' => 75.0,
                     'customer_name' => 'Synthetic Customer',
                     'customer_contact' => '0000000000',
@@ -69,7 +70,12 @@ class AssistantPromptBuilderTest extends TestCase
 
         $this->assertSame(345.67, $safeContext['sales']['summary']['total_sales']);
         $this->assertSame('Synthetic Jacket', $safeContext['inventory']['low_stock_products'][0]['product_name']);
-        $this->assertSame(2, $safeContext['unpaid_summary']['pending_count']);
+        $this->assertSame([
+            'pending_transaction_count' => 1,
+            'pending_record_count' => 2,
+            'outstanding_balance' => 75,
+        ], $safeContext['unpaid_summary']);
+        $this->assertStringContainsString('linked transactions', $prompt['system_instruction']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['sales']);
         $this->assertArrayNotHasKey('customer_contact', $safeContext['inventory']['stats']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['inventory']['low_stock_products'][0]);

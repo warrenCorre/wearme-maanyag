@@ -86,7 +86,7 @@ class AssistantAnswerServiceTest extends TestCase
                     'low_stock_products' => [],
                 ],
                 'best_sellers' => [],
-                'unpaid_summary' => ['pending_count' => 3, 'outstanding_balance' => 90.0],
+                'unpaid_summary' => ['pending_transaction_count' => 2, 'pending_record_count' => 3, 'outstanding_balance' => 90.0],
             ]);
 
         $capturedPrompt = '';
@@ -112,6 +112,47 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame('answered', $result['status']);
         $this->assertSame('Synthetic sales summary.', $result['message']);
         $this->assertStringNotContainsString('Show me sales', $capturedPrompt);
+    }
+
+    public function test_it_distinguishes_linked_transactions_from_payment_records_in_the_unpaid_prompt(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')
+            ->once()
+            ->andReturn([
+                'unpaid_summary' => [
+                    'pending_transaction_count' => 1,
+                    'pending_record_count' => 2,
+                    'outstanding_balance' => 25.0,
+                ],
+                'inventory' => ['low_stock_products' => [['product_name' => 'Synthetic Product']]],
+            ]);
+
+        $capturedPrompt = '';
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')
+            ->once()
+            ->withArgs(function (string $prompt, string $systemInstruction) use (&$capturedPrompt): bool {
+                $capturedPrompt = $prompt;
+
+                return str_contains($prompt, 'linked pending unpaid transaction counts')
+                    && str_contains($prompt, 'pending unpaid payment record counts')
+                    && str_contains($systemInstruction, 'linked transactions');
+            })
+            ->andReturn('Synthetic unpaid summary.');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'How many unpaid transactions?',
+            CarbonImmutable::parse('2026-11-01'),
+        );
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertStringContainsString('"pending_transaction_count": 1', $capturedPrompt);
+        $this->assertStringContainsString('"pending_record_count": 2', $capturedPrompt);
+        $this->assertStringNotContainsString('Synthetic Product', $capturedPrompt);
+        $this->assertStringNotContainsString('How many unpaid transactions?', $capturedPrompt);
     }
 
     private function makeAnswerService(

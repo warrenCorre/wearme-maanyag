@@ -61,14 +61,17 @@ class AssistantKnowledgeRecordBuilder
         $unpaid = $context['unpaid_summary'] ?? null;
 
         if (is_array($unpaid)
-            && $this->validCount($unpaid['pending_count'] ?? null)
+            && $this->validCount($unpaid['pending_transaction_count'] ?? null)
+            && $this->validCount($unpaid['pending_record_count'] ?? null)
+            && $unpaid['pending_transaction_count'] <= $unpaid['pending_record_count']
             && $this->validAmount($unpaid['outstanding_balance'] ?? null)
         ) {
             $records[] = [
                 'source_type' => 'unpaid_summary',
                 'content_text' => sprintf(
-                    'Unpaid summary; pending unpaid records: %d; outstanding balance: PHP %s.',
-                    $unpaid['pending_count'],
+                    'Unpaid summary; linked pending unpaid transactions: %d; pending unpaid payment records: %d; outstanding balance: PHP %s.',
+                    $unpaid['pending_transaction_count'],
+                    $unpaid['pending_record_count'],
                     $this->formatAmount($unpaid['outstanding_balance']),
                 ),
             ];
