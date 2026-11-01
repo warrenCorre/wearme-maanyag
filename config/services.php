@@ -39,6 +39,7 @@ return [
         'api_key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
         'embedding_model' => env('GEMINI_EMBEDDING_MODEL', 'gemini-embedding-001'),
+        'allow_store_data' => env('GEMINI_ALLOW_STORE_DATA', false),
     ],
 
 ];
