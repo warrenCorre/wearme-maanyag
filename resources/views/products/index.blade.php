@@ -74,6 +74,7 @@
                                 <td class="px-3 py-4">
                                     <div class="flex flex-wrap gap-2">
                                         <a class="rounded-lg border-2 border-slate-300 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-rose-400 hover:text-rose-700" href="{{ route('products.edit', $product) }}">Edit</a>
+                                        <a class="rounded-lg border-2 border-slate-300 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-rose-400 hover:text-rose-700" href="{{ route('products.adjustments.create', $product) }}">Adjust Stock</a>
                                         <form method="POST" action="{{ route('products.archive', $product) }}" onsubmit="return confirm('Move this product to the Archive?');">
                                             @csrf
                                             @method('PATCH')

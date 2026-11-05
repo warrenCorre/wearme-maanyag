@@ -137,9 +137,9 @@ class ProductController extends Controller
             ]);
         }
 
-        if ($product->salesTransactionItems()->exists() || $product->unpaidPayments()->exists()) {
+        if ($product->salesTransactionItems()->exists() || $product->unpaidPayments()->exists() || $product->inventoryAdjustments()->exists()) {
             return back()->withErrors([
-                'product' => 'This product cannot be permanently removed because it is referenced by sales or unpaid-payment records.',
+                'product' => 'This product cannot be permanently removed because it has sales, unpaid-payment, or stock-adjustment history.',
             ]);
         }
 
@@ -167,7 +167,7 @@ class ProductController extends Controller
             ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048']
             : ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'];
 
-        return $request->validate([
+        $validated = $request->validate([
             'product_code' => [
                 'required',
                 'string',
@@ -184,9 +184,17 @@ class ProductController extends Controller
             'description' => ['required', 'string'],
             'collection_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.today('Asia/Manila')->toDateString()],
             'price' => ['required', 'numeric', 'min:0'],
-            'quantity' => ['required', 'integer', 'min:0'],
+            'quantity' => $product?->exists
+                ? ['prohibited']
+                : ['required', 'integer', 'min:0'],
             'low_stock_threshold' => ['required', 'integer', 'min:0'],
             'image' => $imageRule,
         ]);
+
+        if ($product?->exists) {
+            unset($validated['quantity']);
+        }
+
+        return $validated;
     }
 }
