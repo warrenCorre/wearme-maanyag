@@ -19,7 +19,7 @@ class AssistantContextService
      *     sales: array{period: string, date: string, summary: array{transaction_count: int, total_sales: float, average_sale: float}},
      *     inventory: array{stats: array{product_count: int, total_units: int, stock_value: float}, low_stock_products: array<int, array{product_name: string, quantity: int, low_stock_threshold: int}>},
      *     best_sellers: array<int, array{product_name: string, units_sold: int, sales_total: float}>,
-     *     unpaid_summary: array{pending_transaction_count: int, pending_record_count: int, outstanding_balance: float},
+     *     unpaid_summary: array{pending_transaction_count: int, outstanding_balance: float},
      *     as_of: array{sales: string, inventory: string, best_sellers: string, unpaid_summary: string},
      *     scopes: array{sales: string, best_sellers: string, unpaid_summary: string}
      * }
@@ -31,8 +31,7 @@ class AssistantContextService
         $lowStockProducts = $this->reportService->lowStockProducts(10);
         $unpaidSummary = UnpaidPayment::query()
             ->where('status', 'pending')
-            ->selectRaw('COUNT(DISTINCT transaction_id) as pending_transaction_count')
-            ->selectRaw('COUNT(*) as pending_record_count')
+            ->selectRaw('COUNT(*) as pending_transaction_count')
             ->selectRaw('COALESCE(SUM(balance), 0) as outstanding_balance')
             ->first();
 
@@ -55,7 +54,6 @@ class AssistantContextService
             'best_sellers' => $this->bestSellers(),
             'unpaid_summary' => [
                 'pending_transaction_count' => (int) $unpaidSummary->pending_transaction_count,
-                'pending_record_count' => (int) $unpaidSummary->pending_record_count,
                 'outstanding_balance' => (float) $unpaidSummary->outstanding_balance,
             ],
             'as_of' => [
@@ -67,7 +65,7 @@ class AssistantContextService
             'scopes' => [
                 'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
                 'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
-                'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
             ],
         ];
     }

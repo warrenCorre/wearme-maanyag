@@ -91,8 +91,8 @@
                     @foreach ($unpaidSummary['recent'] as $unpaid)
                         <li class="flex items-center justify-between gap-3 py-3">
                             <div class="min-w-0">
-                                <p class="truncate text-sm font-bold text-slate-900">{{ $unpaid->customer_name }}</p>
-                                <p class="truncate text-xs font-medium text-slate-500">{{ $unpaid->item_description }}</p>
+                                <p class="truncate text-sm font-bold text-slate-900">{{ $unpaid->salesTransaction->customer_name }}</p>
+                                <p class="truncate text-xs font-medium text-slate-500">{{ $unpaid->salesTransaction->items->pluck('product.product_name')->filter()->join(', ') }}</p>
                             </div>
                             <span class="shrink-0 rounded-xl border-2 border-slate-900 bg-slate-100 px-3 py-1 text-xs font-black text-slate-900">{{ Number::currency($unpaid->balance, 'PHP') }}</span>
                         </li>

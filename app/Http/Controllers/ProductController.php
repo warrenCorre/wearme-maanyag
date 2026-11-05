@@ -137,9 +137,9 @@ class ProductController extends Controller
             ]);
         }
 
-        if ($product->salesTransactionItems()->exists() || $product->unpaidPayments()->exists() || $product->inventoryAdjustments()->exists()) {
+        if ($product->salesTransactionItems()->exists() || $product->inventoryAdjustments()->exists()) {
             return back()->withErrors([
-                'product' => 'This product cannot be permanently removed because it has sales, unpaid-payment, or stock-adjustment history.',
+                'product' => 'This product cannot be permanently removed because it has sales or stock-adjustment history.',
             ]);
         }
 

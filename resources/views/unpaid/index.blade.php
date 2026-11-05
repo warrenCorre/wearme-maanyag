@@ -9,7 +9,7 @@
         class="rounded-xl border-2 border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500"
         href="{{ route('unpaid.create') }}"
     >
-        Record Unpaid Item +
+        Record Unpaid Sale +
     </a>
 @endsection
 
@@ -17,9 +17,7 @@
     @php
         $pendingTransactions = $transactions->whereIn('payment_status', ['unpaid', 'partially_paid']);
 
-        $pendingBalance = $pendingTransactions->sum(function ($transaction) {
-            return $transaction->unpaidPayments->sum(fn ($payment) => (float) $payment->balance);
-        });
+        $pendingBalance = $pendingTransactions->sum(fn ($transaction) => (float) ($transaction->unpaidPayment?->balance ?? 0));
     @endphp
 
     <section class="grid gap-4 sm:grid-cols-2">
@@ -77,18 +75,10 @@
                     <tbody class="divide-y divide-slate-100">
                         @foreach ($pendingTransactions as $transaction)
                             @php
-                                $payments = $transaction->unpaidPayments;
-
-                                $customerName = $payments->first()?->customer_name ?? 'Unknown Customer';
-                                $customerContact = $payments->first()?->customer_contact ?? 'No contact';
-
-                                $itemDescriptions = $payments
-                                    ->pluck('item_description')
-                                    ->filter()
-                                    ->unique()
-                                    ->values();
-
-                                $totalBalance = $payments->sum(fn ($payment) => (float) $payment->balance);
+                                $payment = $transaction->unpaidPayment;
+                                $customerName = $transaction->customer_name ?? 'Unknown Customer';
+                                $customerContact = $transaction->customer_contact ?? 'No contact';
+                                $totalBalance = (float) ($payment?->balance ?? 0);
 
                                 $date = $transaction->transaction_date;
 
@@ -126,11 +116,6 @@
                                         </p>
                                     @endif
 
-                                    @if ($itemDescriptions->isNotEmpty())
-                                        <p class="mt-2 text-xs font-medium text-slate-500">
-                                            {{ $itemDescriptions->join(', ') }}
-                                        </p>
-                                    @endif
                                 </td>
 
                                 <td class="px-3 py-4 text-slate-600">
@@ -176,8 +161,8 @@
                                         data-transaction-url="{{ route('unpaid.transaction.update', $transaction) }}"
                                         data-customer-name="{{ $customerName }}"
                                         data-customer-contact="{{ $customerContact }}"
-                                        data-item-description="{{ $itemDescriptions->join(', ') }}"
-                                        data-amount-paid="{{ number_format($payments->sum(fn ($payment) => (float) $payment->amount_paid), 2, '.', '') }}"
+                                        data-delivery-address="{{ $transaction->delivery_address }}"
+                                        data-amount-paid="{{ number_format((float) ($payment?->amount_paid ?? 0), 2, '.', '') }}"
                                         data-total-amount="{{ number_format((float) $transaction->total_amount, 2, '.', '') }}"
                                         data-balance="{{ number_format($totalBalance, 2, '.', '') }}"
                                     >
@@ -303,17 +288,16 @@
                     <div>
                         <label
                             class="text-sm font-bold text-slate-700"
-                            for="transaction_item_description"
+                            for="transaction_delivery_address"
                         >
-                            Item Description
+                            Delivery Address (optional)
                         </label>
 
                         <textarea
                             class="mt-2 min-h-24 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
-                            id="transaction_item_description"
-                            name="item_description"
+                            id="transaction_delivery_address"
+                            name="delivery_address"
                             maxlength="255"
-                            required
                         ></textarea>
                     </div>
 
@@ -372,7 +356,7 @@
 
             const customerNameInput = transactionModal?.querySelector('#transaction_customer_name');
             const customerContactInput = transactionModal?.querySelector('#transaction_customer_contact');
-            const itemDescriptionInput = transactionModal?.querySelector('#transaction_item_description');
+            const deliveryAddressInput = transactionModal?.querySelector('#transaction_delivery_address');
             const amountPaidInput = transactionModal?.querySelector('#transaction_amount_paid');
 
             const transactionTotal = transactionModal?.querySelector('[data-transaction-total]');
@@ -398,7 +382,7 @@
 
                     customerNameInput.value = button.dataset.customerName ?? '';
                     customerContactInput.value = button.dataset.customerContact ?? '';
-                    itemDescriptionInput.value = button.dataset.itemDescription ?? '';
+                    deliveryAddressInput.value = button.dataset.deliveryAddress ?? '';
                     amountPaidInput.value = button.dataset.amountPaid ?? '0';
 
                     transactionTotal.textContent = button.dataset.totalAmount ?? '0.00';

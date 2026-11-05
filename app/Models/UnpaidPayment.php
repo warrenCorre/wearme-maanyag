@@ -11,11 +11,6 @@ class UnpaidPayment extends Model
 
     protected $fillable = [
         'transaction_id',
-        'product_id',
-        'quantity',
-        'customer_name',
-        'customer_contact',
-        'item_description',
         'amount_paid',
         'balance',
         'payment_date',
@@ -28,7 +23,6 @@ class UnpaidPayment extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'integer',
             'amount_paid' => 'decimal:2',
             'balance' => 'decimal:2',
             'payment_date' => 'datetime',
@@ -38,11 +32,6 @@ class UnpaidPayment extends Model
     public function salesTransaction(): BelongsTo
     {
         return $this->belongsTo(SalesTransaction::class, 'transaction_id');
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class, 'product_id');
     }
 
     public function updatedBy(): BelongsTo

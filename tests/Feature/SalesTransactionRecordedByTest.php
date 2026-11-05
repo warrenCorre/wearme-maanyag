@@ -49,7 +49,6 @@ class SalesTransactionRecordedByTest extends TestCase
             'products' => [['product_id' => $product->id, 'quantity' => 1]],
             'customer_name' => 'Synthetic Customer',
             'customer_contact' => '0000000001',
-            'item_description' => 'Synthetic item',
             'amount_paid' => '5.00',
         ], $owner);
 
