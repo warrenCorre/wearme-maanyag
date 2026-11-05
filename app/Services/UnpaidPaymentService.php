@@ -282,10 +282,26 @@ class UnpaidPaymentService
     public function updateCumulativePayment(UnpaidPayment $unpaidPayment, int $amountPaidCents, User $updatedBy): UnpaidPayment
     {
         return DB::transaction(function () use ($unpaidPayment, $amountPaidCents, $updatedBy) {
+            $transaction = $unpaidPayment->transaction_id !== null
+                ? SalesTransaction::query()->lockForUpdate()->findOrFail($unpaidPayment->transaction_id)
+                : null;
+
             $payment = UnpaidPayment::query()
                 ->whereKey($unpaidPayment->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($payment->transaction_id !== null && (int) $payment->transaction_id !== $transaction?->id) {
+                throw ValidationException::withMessages([
+                    'amount_paid' => 'The linked sale has changed. Please reload and try again.',
+                ]);
+            }
+
+            if ($transaction?->unpaidPayments()->where('id', '!=', $payment->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'amount_paid' => 'This sale has multiple unpaid records. Update the transaction payment instead.',
+                ]);
+            }
 
             $currentPaidCents = $this->toCents($payment->amount_paid);
             $totalCents = $currentPaidCents + $this->toCents($payment->balance);
@@ -307,12 +323,8 @@ class UnpaidPaymentService
                 'updated_by' => $updatedBy->id,
             ]);
 
-            if ($payment->transaction_id) {
-                $transaction = SalesTransaction::query()
-                    ->lockForUpdate()
-                    ->find($payment->transaction_id);
-
-                $transaction?->update([
+            if ($transaction) {
+                $transaction->update([
                     'payment_status' => $settled
                         ? 'paid'
                         : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
