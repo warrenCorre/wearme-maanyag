@@ -128,11 +128,55 @@ class ProductControllerTest extends TestCase
         ]);
         $payload = $this->productPayload($category, '2026-10-15');
         unset($payload['image']);
+        unset($payload['quantity']);
 
         $response = $this->actingAs($owner)->put(route('products.update', $product), $payload);
 
         $response->assertRedirect(route('products.index'));
         $this->assertSame('2026-10-15', $product->fresh()->collection_date->toDateString());
+    }
+
+    public function test_owner_cannot_change_stock_through_the_product_edit_form(): void
+    {
+        $owner = $this->createOwner();
+        $category = Category::query()->create(['category_name' => 'Pants', 'status' => 'active']);
+        $product = Product::query()->create([
+            'product_code' => 'SYN-001',
+            'product_name' => 'Synthetic Pants',
+            'category_id' => $category->id,
+            'description' => 'Synthetic product.',
+            'collection_date' => '2026-10-15',
+            'price' => 100,
+            'quantity' => 5,
+            'low_stock_threshold' => 1,
+            'image' => 'products/synthetic.jpg',
+            'status' => 'active',
+            'created_by' => $owner->id,
+            'updated_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner)
+            ->get(route('products.edit', $product))
+            ->assertSee('Adjust Stock')
+            ->assertDontSee('name="quantity"', false);
+
+        $payload = $this->productPayload($category, '2026-10-15');
+        unset($payload['image']);
+        $payload['quantity'] = 10;
+
+        $this->actingAs($owner)
+            ->put(route('products.update', $product), $payload)
+            ->assertSessionHasErrors('quantity');
+
+        $this->assertSame(5, $product->fresh()->quantity);
+        $this->assertDatabaseCount('tbl_inventory_adjustments', 0);
+
+        $payload['quantity'] = '';
+        $this->actingAs($owner)
+            ->put(route('products.update', $product), $payload)
+            ->assertRedirect(route('products.index'));
+
+        $this->assertSame(5, $product->fresh()->quantity);
     }
 
     private function createOwner(): User

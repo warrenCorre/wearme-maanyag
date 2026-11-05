@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CashierController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InventoryAdjustmentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReceiptController;
@@ -88,6 +89,14 @@ Route::get('/products/{product}/edit', [ProductController::class, 'edit'])
 Route::put('/products/{product}', [ProductController::class, 'update'])
     ->middleware(['auth', 'role:store_owner'])
     ->name('products.update');
+
+Route::get('/products/{product}/adjust', [InventoryAdjustmentController::class, 'create'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('products.adjustments.create');
+
+Route::post('/products/{product}/adjust', [InventoryAdjustmentController::class, 'store'])
+    ->middleware(['auth', 'role:store_owner'])
+    ->name('products.adjustments.store');
 
 Route::patch('/products/{product}/archive', [ProductController::class, 'archive'])
     ->middleware(['auth', 'role:store_owner'])

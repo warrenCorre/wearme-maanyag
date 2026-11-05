@@ -60,7 +60,12 @@
                 </div>
                 <div>
                     <label class="text-sm font-bold text-slate-700" for="quantity">Current Quantity</label>
-                    <input class="mt-2 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" type="number" id="quantity" name="quantity" value="{{ old('quantity', $product->quantity) }}" min="0" required>
+                    @if ($product->exists)
+                        <div class="mt-2 rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700" id="quantity">{{ $product->quantity }}</div>
+                        <p class="mt-2 text-xs font-medium text-slate-500">Use <a class="font-bold text-rose-700 underline" href="{{ route('products.adjustments.create', $product) }}">Adjust Stock</a> to record a change and its reason.</p>
+                    @else
+                        <input class="mt-2 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" type="number" id="quantity" name="quantity" value="{{ old('quantity', $product->quantity) }}" min="0" required>
+                    @endif
                 </div>
                 <div>
                     <label class="text-sm font-bold text-slate-700" for="low_stock_threshold">Low-stock Threshold</label>
