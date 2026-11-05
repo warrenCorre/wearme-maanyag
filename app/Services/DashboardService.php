@@ -75,7 +75,7 @@ class DashboardService
             ->selectRaw('COALESCE(SUM(balance), 0) as outstanding_balance')
             ->first();
 
-        $recent = UnpaidPayment::with('product')
+        $recent = UnpaidPayment::with('salesTransaction.items.product')
             ->where('status', 'pending')
             ->orderByDesc('id')
             ->limit(6)

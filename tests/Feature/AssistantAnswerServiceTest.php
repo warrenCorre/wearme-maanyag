@@ -113,7 +113,7 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('Show me sales', $capturedPrompt);
     }
 
-    public function test_it_distinguishes_linked_transactions_from_payment_records_in_the_unpaid_prompt(): void
+    public function test_it_uses_only_aggregate_sale_balances_in_the_unpaid_prompt(): void
     {
         config(['services.gemini.allow_store_data' => true]);
 
@@ -123,13 +123,12 @@ class AssistantAnswerServiceTest extends TestCase
             ->andReturn([
                 'unpaid_summary' => [
                     'pending_transaction_count' => 1,
-                    'pending_record_count' => 2,
                     'outstanding_balance' => 25.0,
                 ],
                 'scopes' => [
                     'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
                     'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
-                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                    'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
                 ],
                 'as_of' => $this->asOf(),
                 'inventory' => ['low_stock_products' => [['product_name' => 'Synthetic Product']]],
@@ -142,16 +141,15 @@ class AssistantAnswerServiceTest extends TestCase
             ->withArgs(function (string $prompt, string $systemInstruction, array $schema) use (&$capturedPrompt): bool {
                 $capturedPrompt = $prompt;
 
-                return str_contains($prompt, 'linked pending unpaid transaction counts')
-                    && str_contains($prompt, 'pending unpaid payment record counts')
-                    && str_contains($prompt, 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.')
+                return str_contains($prompt, 'aggregate pending sale counts')
+                    && str_contains($prompt, 'One pending balance per sale; excludes settled balances.')
                     && ! str_contains($prompt, 'All recorded sales transactions')
                     && ! str_contains($prompt, 'Paid sales transactions only')
-                    && str_contains($systemInstruction, 'linked transactions')
+                    && str_contains($systemInstruction, 'Each pending balance belongs to exactly one sale')
                     && $schema === AssistantResponseValidator::RESPONSE_SCHEMA;
             })
             ->andReturn($this->structuredResponse(
-                'There is 1 linked pending unpaid transaction and 2 pending payment records, with an outstanding balance of PHP 25.00.',
+                'There is 1 pending sale with an outstanding balance of PHP 25.00.',
                 'calculation',
                 [['type' => 'unpaid_summary', 'label' => 'Unpaid summary', 'as_of' => '2026-11-02']],
             ));
@@ -162,9 +160,9 @@ class AssistantAnswerServiceTest extends TestCase
         );
 
         $this->assertSame('answered', $result['status']);
-        $this->assertSame('There is 1 linked pending unpaid transaction and 2 pending payment records, with an outstanding balance of PHP 25.00.', $result['message']);
+        $this->assertSame('There is 1 pending sale with an outstanding balance of PHP 25.00.', $result['message']);
         $this->assertStringContainsString('"pending_transaction_count": 1', $capturedPrompt);
-        $this->assertStringContainsString('"pending_record_count": 2', $capturedPrompt);
+        $this->assertStringNotContainsString('pending_record_count', $capturedPrompt);
         $this->assertStringNotContainsString('Synthetic Product', $capturedPrompt);
         $this->assertStringNotContainsString('How many unpaid transactions?', $capturedPrompt);
     }
@@ -183,7 +181,7 @@ class AssistantAnswerServiceTest extends TestCase
                 'scopes' => [
                     'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
                     'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
-                    'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                    'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
                 ],
                 'as_of' => $this->asOf(),
             ]);
@@ -198,7 +196,7 @@ class AssistantAnswerServiceTest extends TestCase
                 return str_contains($prompt, 'Paid sales transactions only, all-time; not limited to the selected sales period.')
                     && str_contains($prompt, 'Synthetic Jacket')
                     && ! str_contains($prompt, 'All recorded sales transactions')
-                    && ! str_contains($prompt, 'Pending unpaid payment records')
+                    && ! str_contains($prompt, 'One pending balance per sale')
                     && str_contains($systemInstruction, 'best sellers use paid transactions only and are all-time')
                     && $schema === AssistantResponseValidator::RESPONSE_SCHEMA;
             })
@@ -217,7 +215,7 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame('Synthetic Jacket leads with 3 paid units and PHP 30.00 in paid sales.', $result['message']);
         $this->assertStringContainsString('Paid sales transactions only', $capturedPrompt);
         $this->assertStringNotContainsString('All recorded sales transactions', $capturedPrompt);
-        $this->assertStringNotContainsString('Pending unpaid payment records', $capturedPrompt);
+        $this->assertStringNotContainsString('One pending balance per sale', $capturedPrompt);
     }
 
     public function test_it_rejects_invalid_structured_output_without_returning_raw_text(): void
@@ -316,11 +314,11 @@ class AssistantAnswerServiceTest extends TestCase
                 'low_stock_products' => [],
             ],
             'best_sellers' => [],
-            'unpaid_summary' => ['pending_transaction_count' => 2, 'pending_record_count' => 3, 'outstanding_balance' => 90.0],
+            'unpaid_summary' => ['pending_transaction_count' => 2, 'outstanding_balance' => 90.0],
             'scopes' => [
                 'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
                 'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
-                'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+                'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
             ],
             'as_of' => $this->asOf(),
         ];

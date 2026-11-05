@@ -59,11 +59,6 @@ class Product extends Model
         return $this->hasMany(SalesTransactionItem::class, 'product_id');
     }
 
-    public function unpaidPayments(): HasMany
-    {
-        return $this->hasMany(UnpaidPayment::class, 'product_id');
-    }
-
     public function inventoryAdjustments(): HasMany
     {
         return $this->hasMany(InventoryAdjustment::class, 'product_id');

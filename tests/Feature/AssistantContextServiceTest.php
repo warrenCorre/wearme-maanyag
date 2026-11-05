@@ -69,6 +69,8 @@ class AssistantContextServiceTest extends TestCase
             'transaction_no' => 'SYNTHETIC-002',
             'sale_type' => 'walk_in',
             'online_platform' => 'N/A',
+            'customer_name' => 'Synthetic Customer Name',
+            'customer_contact' => '0000000001',
             'total_amount' => 35,
             'payment_status' => 'partially_paid',
             'recorded_by' => $ownerId,
@@ -76,45 +78,12 @@ class AssistantContextServiceTest extends TestCase
         ]);
 
         DB::table('tbl_unpaid_payments')->insert([
-            [
-                'transaction_id' => $unpaidTransaction->id,
-                'product_id' => $bestSeller->id,
-                'quantity' => 1,
-                'customer_name' => 'Synthetic Customer Name',
-                'customer_contact' => '0000000001',
-                'item_description' => 'Synthetic unpaid item',
-                'amount_paid' => 5,
-                'balance' => 15,
-                'payment_date' => null,
-                'status' => 'pending',
-                'updated_by' => $ownerId,
-            ],
-            [
-                'transaction_id' => $unpaidTransaction->id,
-                'product_id' => $otherProduct->id,
-                'quantity' => 1,
-                'customer_name' => 'Synthetic Customer Name',
-                'customer_contact' => '0000000001',
-                'item_description' => 'Synthetic unpaid item',
-                'amount_paid' => 0,
-                'balance' => 10,
-                'payment_date' => null,
-                'status' => 'pending',
-                'updated_by' => $ownerId,
-            ],
-            [
-                'transaction_id' => $unpaidTransaction->id,
-                'product_id' => $bestSeller->id,
-                'quantity' => 1,
-                'customer_name' => 'Synthetic Customer Name',
-                'customer_contact' => '0000000001',
-                'item_description' => 'Synthetic settled item',
-                'amount_paid' => 10,
-                'balance' => 0,
-                'payment_date' => '2026-10-10 12:00:00',
-                'status' => 'settled',
-                'updated_by' => $ownerId,
-            ],
+            'transaction_id' => $unpaidTransaction->id,
+            'amount_paid' => 10,
+            'balance' => 25,
+            'payment_date' => null,
+            'status' => 'pending',
+            'updated_by' => $ownerId,
         ]);
 
         $context = app(AssistantContextService::class)->build(
@@ -138,13 +107,12 @@ class AssistantContextServiceTest extends TestCase
         $this->assertSame(3, $context['best_sellers'][0]['units_sold']);
         $this->assertSame([
             'pending_transaction_count' => 1,
-            'pending_record_count' => 2,
             'outstanding_balance' => 25.0,
         ], $context['unpaid_summary']);
         $this->assertSame([
             'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
             'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
-            'unpaid_summary' => 'Pending unpaid payment records; linked transaction count is distinct from payment-record count.',
+            'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
         ], $context['scopes']);
         $this->assertSame([
             'sales' => '2026-10-15',
@@ -157,7 +125,7 @@ class AssistantContextServiceTest extends TestCase
         $this->assertArrayNotHasKey('customer_contact', $context['unpaid_summary']);
     }
 
-    public function test_it_excludes_unlinked_pending_records_from_the_linked_transaction_count(): void
+    public function test_it_excludes_settled_sale_balances_from_outstanding_totals(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
 
@@ -173,23 +141,23 @@ class AssistantContextServiceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $categoryId = Category::query()->create([
-            'category_name' => 'Synthetic clothing',
-            'status' => 'active',
-        ])->id;
-        $product = $this->createProduct($ownerId, $categoryId, 'Synthetic Jacket', 2, 3);
+        $transaction = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-SETTLED',
+            'sale_type' => 'walk_in',
+            'online_platform' => 'N/A',
+            'customer_name' => 'Synthetic Customer Name',
+            'total_amount' => '12.00',
+            'payment_status' => 'paid',
+            'recorded_by' => $ownerId,
+            'transaction_date' => '2026-10-10 12:00:00',
+        ]);
 
         DB::table('tbl_unpaid_payments')->insert([
-            'transaction_id' => null,
-            'product_id' => $product->id,
-            'quantity' => 1,
-            'customer_name' => 'Synthetic Customer Name',
-            'customer_contact' => '0000000001',
-            'item_description' => 'Synthetic unpaid item',
-            'amount_paid' => 5,
-            'balance' => 7,
-            'payment_date' => null,
-            'status' => 'pending',
+            'transaction_id' => $transaction->id,
+            'amount_paid' => 12,
+            'balance' => 0,
+            'payment_date' => '2026-10-10 12:00:00',
+            'status' => 'settled',
             'updated_by' => $ownerId,
         ]);
 
@@ -197,8 +165,7 @@ class AssistantContextServiceTest extends TestCase
 
         $this->assertSame([
             'pending_transaction_count' => 0,
-            'pending_record_count' => 1,
-            'outstanding_balance' => 7.0,
+            'outstanding_balance' => 0.0,
         ], $context['unpaid_summary']);
         $this->assertSame([
             'sales' => '2026-10-15',

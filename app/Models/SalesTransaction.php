@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SalesTransaction extends Model
 {
@@ -43,8 +44,8 @@ class SalesTransaction extends Model
         return $this->hasMany(SalesTransactionItem::class, 'transaction_id');
     }
 
-    public function unpaidPayments(): HasMany
+    public function unpaidPayment(): HasOne
     {
-        return $this->hasMany(UnpaidPayment::class, 'transaction_id');
+        return $this->hasOne(UnpaidPayment::class, 'transaction_id');
     }
 }

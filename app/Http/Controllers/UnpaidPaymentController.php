@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\SalesTransaction;
 use App\Models\UnpaidPayment;
 use App\Services\UnpaidPaymentService;
 use Illuminate\Http\RedirectResponse;
@@ -10,7 +11,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use App\Models\SalesTransaction;
 
 class UnpaidPaymentController extends Controller
 {
@@ -20,8 +20,7 @@ class UnpaidPaymentController extends Controller
             ->with([
                 'user',
                 'items.product',
-                'unpaidPayments.product',
-                'unpaidPayments.updatedBy',
+                'unpaidPayment.updatedBy',
             ])
             ->whereIn('payment_status', ['unpaid', 'partially_paid'])
             ->orderByDesc('transaction_date')
@@ -65,7 +64,7 @@ class UnpaidPaymentController extends Controller
 
             'customer_name' => ['required', 'string', 'max:150'],
             'customer_contact' => ['required', 'string', 'max:20'],
-            'item_description' => ['required', 'string', 'max:255'],
+            'delivery_address' => ['nullable', 'string', 'max:255'],
             'amount_paid' => ['required', 'numeric', 'min:0'],
         ]);
 
@@ -95,8 +94,8 @@ class UnpaidPaymentController extends Controller
 
         return redirect()->route('unpaid.index')
             ->with('status', $payment->status === 'settled'
-                ? "Payment for {$payment->customer_name} is settled."
-                : "Payment for {$payment->customer_name} was updated.");
+                ? "Payment for {$payment->salesTransaction->customer_name} is settled."
+                : "Payment for {$payment->salesTransaction->customer_name} was updated.");
     }
 
     public function updateTransaction(
@@ -107,7 +106,7 @@ class UnpaidPaymentController extends Controller
         $validated = $request->validate([
             'customer_name' => ['required', 'string', 'max:150'],
             'customer_contact' => ['required', 'string', 'max:20'],
-            'item_description' => ['required', 'string', 'max:255'],
+            'delivery_address' => ['nullable', 'string', 'max:255'],
 
             'products' => ['nullable', 'array'],
             'products.*.product_id' => [
@@ -132,7 +131,7 @@ class UnpaidPaymentController extends Controller
             ->route('unpaid.index')
             ->with(
                 'status',
-                "Unpaid transaction for {$updatedTransaction->unpaidPayments->first()?->customer_name} updated successfully."
+                "Unpaid transaction for {$updatedTransaction->customer_name} updated successfully."
             );
     }
 }

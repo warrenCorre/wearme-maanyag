@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\SalesTransaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -177,6 +178,35 @@ class ProductControllerTest extends TestCase
             ->assertRedirect(route('products.index'));
 
         $this->assertSame(5, $product->fresh()->quantity);
+    }
+
+    public function test_owner_cannot_permanently_delete_a_product_referenced_by_an_unpaid_sale_item(): void
+    {
+        $owner = $this->createOwner();
+        $category = Category::query()->create(['category_name' => 'Synthetic category', 'status' => 'active']);
+        $product = Product::query()->create([
+            'product_code' => 'SYN-HISTORY', 'product_name' => 'Synthetic Jacket',
+            'category_id' => $category->id, 'description' => 'Synthetic product',
+            'collection_date' => '2026-11-05', 'price' => '10.00', 'quantity' => 2,
+            'low_stock_threshold' => 1, 'image' => 'products/synthetic.jpg',
+            'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+        $sale = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-UNPAID-HISTORY', 'sale_type' => 'walk_in',
+            'online_platform' => 'N/A', 'customer_name' => 'Synthetic Customer',
+            'total_amount' => '10.00', 'payment_status' => 'unpaid',
+            'recorded_by' => $owner->id, 'transaction_date' => '2026-11-05 10:00:00',
+        ]);
+        $sale->items()->create(['product_id' => $product->id, 'quantity' => 1, 'unit_price' => '10.00', 'subtotal' => '10.00']);
+        $sale->unpaidPayment()->create(['amount_paid' => '0.00', 'balance' => '10.00', 'status' => 'pending', 'updated_by' => $owner->id]);
+        $product->update(['status' => 'archived']);
+        $product->delete();
+
+        $this->actingAs($owner)->delete(route('products.permanent', $product->id))->assertSessionHasErrors('product');
+
+        $this->assertDatabaseHas('tbl_products', ['id' => $product->id, 'status' => 'archived']);
+        $this->assertDatabaseCount('tbl_sales_transaction_items', 1);
+        $this->assertDatabaseCount('tbl_unpaid_payments', 1);
     }
 
     private function createOwner(): User

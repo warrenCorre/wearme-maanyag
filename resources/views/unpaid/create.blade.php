@@ -1,8 +1,8 @@
 @extends('layouts.app')
 
-@section('title', 'Record Unpaid Item - Wear Me Maanyag')
-@section('page_title', 'Record Unpaid Item')
-@section('page_description', 'Record an item taken by a customer with an outstanding balance against the shared inventory.')
+@section('title', 'Record Unpaid Sale - Wear Me Maanyag')
+@section('page_title', 'Record Unpaid Sale')
+@section('page_description', 'Record a sale with an outstanding balance against the shared inventory.')
 
 @section('header_actions')
     <a class="rounded-xl border-2 border-slate-900 bg-white px-4 py-2.5 text-sm font-black text-slate-800 transition hover:bg-slate-900 hover:text-white" href="{{ route('unpaid.index') }}">Back to Unpaid</a>
@@ -19,7 +19,7 @@
         <section class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
             <div class="border-b-2 border-slate-100 pb-4">
                 <p class="text-sm font-black uppercase tracking-wide text-rose-500">Transaction details</p>
-                <h2 class="mt-1 text-xl font-black">Sale and Item</h2>
+                <h2 class="mt-1 text-xl font-black">Sale and Items</h2>
             </div>
 
             <div class="mt-6 grid gap-5 md:grid-cols-2">
@@ -145,7 +145,7 @@
                         <span class="absolute left-3 top-2.5 text-sm font-bold text-slate-500">₱</span>
                         <input class="w-full rounded-xl border-2 border-slate-300 py-2.5 pl-8 pr-3 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" id="amount_paid" name="amount_paid" type="number" min="0" step="0.01" value="{{ old('amount_paid', '0.00') }}" required {{ $products->isEmpty() ? 'disabled' : '' }}>
                     </div>
-                    <p class="mt-1 text-xs font-medium text-slate-500">This is cumulative payment so far; it must remain below the item total.</p>
+                    <p class="mt-1 text-xs font-medium text-slate-500">This is the initial payment for the whole sale; it must remain below the sale total.</p>
                 </div>
             </div>
         </section>
@@ -166,14 +166,14 @@
                     <input class="mt-2 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" id="customer_contact" name="customer_contact" type="text" maxlength="20" value="{{ old('customer_contact') }}" required>
                 </div>
                 <div class="md:col-span-2">
-                    <label class="text-sm font-bold text-slate-700" for="item_description">Item Description</label>
-                    <textarea class="mt-2 min-h-24 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" id="item_description" name="item_description" maxlength="255" required>{{ old('item_description') }}</textarea>
+                    <label class="text-sm font-bold text-slate-700" for="delivery_address">Delivery Address (optional)</label>
+                    <textarea class="mt-2 min-h-24 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" id="delivery_address" name="delivery_address" maxlength="255">{{ old('delivery_address') }}</textarea>
                 </div>
             </div>
         </section>
 
         <div class="flex justify-end">
-            <button class="rounded-xl border-2 border-slate-900 bg-slate-900 px-5 py-2.5 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {{ $products->isEmpty() ? 'disabled' : '' }}>Record Unpaid Item</button>
+            <button class="rounded-xl border-2 border-slate-900 bg-slate-900 px-5 py-2.5 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {{ $products->isEmpty() ? 'disabled' : '' }}>Record Unpaid Sale</button>
         </div>
     </form>
 

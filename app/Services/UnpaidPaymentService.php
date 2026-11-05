@@ -15,6 +15,7 @@ class UnpaidPaymentService
     public function recordPendingItems(array $data, User $updatedBy): SalesTransaction
     {
         return DB::transaction(function () use ($data, $updatedBy) {
+            $this->rejectDuplicateProducts($data['products']);
             $items = [];
             $totalCents = 0;
 
@@ -64,6 +65,9 @@ class UnpaidPaymentService
                 'transaction_no' => $this->generateTransactionNumber(),
                 'sale_type' => $data['sale_type'],
                 'online_platform' => $data['online_platform'] ?? '',
+                'customer_name' => $data['customer_name'],
+                'customer_contact' => $data['customer_contact'],
+                'delivery_address' => $data['delivery_address'] ?? null,
                 'total_amount' => $this->formatCents($totalCents),
                 'payment_status' => $amountPaidCents > 0
                     ? 'partially_paid'
@@ -72,17 +76,10 @@ class UnpaidPaymentService
                 'transaction_date' => now(),
             ]);
 
-            $remainingPaymentCents = $amountPaidCents;
-
             foreach ($items as $item) {
                 $product = $item['product'];
                 $quantity = $item['quantity'];
                 $itemTotalCents = $item['subtotal_cents'];
-
-                $itemPaidCents = min($remainingPaymentCents, $itemTotalCents);
-                $itemBalanceCents = $itemTotalCents - $itemPaidCents;
-
-                $remainingPaymentCents -= $itemPaidCents;
 
                 $product->update([
                     'quantity' => $product->quantity - $quantity,
@@ -95,27 +92,20 @@ class UnpaidPaymentService
                     'unit_price' => $this->formatCents($item['unit_price_cents']),
                     'subtotal' => $this->formatCents($itemTotalCents),
                 ]);
-
-                UnpaidPayment::create([
-                    'transaction_id' => $transaction->id,
-                    'product_id' => $product->id,
-                    'quantity' => $quantity,
-                    'customer_name' => $data['customer_name'],
-                    'customer_contact' => $data['customer_contact'],
-                    'item_description' => $data['item_description'],
-                    'amount_paid' => $this->formatCents($itemPaidCents),
-                    'balance' => $this->formatCents($itemBalanceCents),
-                    'payment_date' => null,
-                    'status' => 'pending',
-                    'updated_by' => $updatedBy->id,
-                ]);
             }
+
+            $transaction->unpaidPayment()->create([
+                'amount_paid' => $this->formatCents($amountPaidCents),
+                'balance' => $this->formatCents($totalCents - $amountPaidCents),
+                'payment_date' => null,
+                'status' => 'pending',
+                'updated_by' => $updatedBy->id,
+            ]);
 
             return $transaction->load([
                 'items.product',
                 'user',
-                'unpaidPayments.product',
-                'unpaidPayments.updatedBy',
+                'unpaidPayment.updatedBy',
             ]);
         });
     }
@@ -127,7 +117,6 @@ class UnpaidPaymentService
     ): SalesTransaction {
         return DB::transaction(function () use ($transaction, $data, $updatedBy) {
             $transaction = SalesTransaction::query()
-                ->with(['items.product', 'unpaidPayments'])
                 ->lockForUpdate()
                 ->findOrFail($transaction->id);
 
@@ -137,11 +126,16 @@ class UnpaidPaymentService
                 ]);
             }
 
-            /*
-            * Step 1:
-            * Add any newly selected products to the same transaction.
-            */
+            $payment = $transaction->unpaidPayment()->lockForUpdate()->firstOrFail();
+
+            if ($payment->status !== 'pending' || $this->toCents($payment->amount_paid) + $this->toCents($payment->balance) !== $this->toCents($transaction->total_amount)) {
+                throw ValidationException::withMessages([
+                    'transaction' => 'The sale balance does not match its unpaid record. Please review this sale.',
+                ]);
+            }
+
             $newProductRows = $data['products'] ?? [];
+            $this->rejectDuplicateProducts($newProductRows);
 
             foreach ($newProductRows as $row) {
                 $product = Product::query()
@@ -178,94 +172,32 @@ class UnpaidPaymentService
                     'unit_price' => $this->formatCents($unitPriceCents),
                     'subtotal' => $this->formatCents($subtotalCents),
                 ]);
-
-                UnpaidPayment::create([
-                    'transaction_id' => $transaction->id,
-                    'product_id' => $product->id,
-                    'quantity' => $quantity,
-                    'customer_name' => $data['customer_name'],
-                    'customer_contact' => $data['customer_contact'],
-                    'item_description' => $data['item_description'],
-                    'amount_paid' => '0.00',
-                    'balance' => $this->formatCents($subtotalCents),
-                    'payment_date' => null,
-                    'status' => 'pending',
-                    'updated_by' => $updatedBy->id,
-                ]);
             }
 
-            /*
-            * Step 2:
-            * Refresh the transaction after new items were added.
-            */
-            $transaction->load([
-                'items.product',
-                'unpaidPayments',
-            ]);
-
-            /*
-            * Step 3:
-            * Update shared customer information on all unpaid records.
-            */
-            foreach ($transaction->unpaidPayments as $payment) {
-                $payment->update([
-                    'customer_name' => $data['customer_name'],
-                    'customer_contact' => $data['customer_contact'],
-                    'item_description' => $data['item_description'],
-                    'updated_by' => $updatedBy->id,
-                ]);
-            }
-
-            /*
-            * Step 4:
-            * Recalculate the transaction total from its transaction items.
-            */
-            $totalCents = $transaction->items->sum(
-                fn ($item) => $this->toCents($item->subtotal)
-            );
-
-            /*
-            * Step 5:
-            * Treat amount_paid as the customer's cumulative payment
-            * for the whole transaction.
-            */
+            $totalCents = $this->toCents($transaction->items()->sum('subtotal'));
             $amountPaidCents = $this->toCents($data['amount_paid']);
 
-            if ($amountPaidCents < 0 || $amountPaidCents > $totalCents) {
+            if ($amountPaidCents < $this->toCents($payment->amount_paid) || $amountPaidCents > $totalCents) {
                 throw ValidationException::withMessages([
-                    'amount_paid' => 'The cumulative payment cannot be less than ₱0.00 or greater than the transaction total.',
+                    'amount_paid' => 'The cumulative payment cannot decrease or exceed the transaction total.',
                 ]);
             }
 
-            /*
-            * Step 6:
-            * Distribute the cumulative payment across the transaction's
-            * unpaid-payment rows without creating a payment-history table.
-            */
-            $remainingPaidCents = $amountPaidCents;
-
-            foreach ($transaction->unpaidPayments as $payment) {
-                $itemTotalCents = $this->toCents($payment->amount_paid)
-                    + $this->toCents($payment->balance);
-
-                $itemPaidCents = min($remainingPaidCents, $itemTotalCents);
-                $itemBalanceCents = $itemTotalCents - $itemPaidCents;
-                $settled = $itemBalanceCents === 0;
-
-                $payment->update([
-                    'amount_paid' => $this->formatCents($itemPaidCents),
-                    'balance' => $this->formatCents($itemBalanceCents),
-                    'payment_date' => $settled ? now() : null,
-                    'status' => $settled ? 'settled' : 'pending',
-                    'updated_by' => $updatedBy->id,
-                ]);
-
-                $remainingPaidCents -= $itemPaidCents;
-            }
+            $settled = $amountPaidCents === $totalCents;
+            $payment->update([
+                'amount_paid' => $this->formatCents($amountPaidCents),
+                'balance' => $this->formatCents($totalCents - $amountPaidCents),
+                'payment_date' => $settled ? now() : null,
+                'status' => $settled ? 'settled' : 'pending',
+                'updated_by' => $updatedBy->id,
+            ]);
 
             $transaction->update([
+                'customer_name' => $data['customer_name'],
+                'customer_contact' => $data['customer_contact'],
+                'delivery_address' => $data['delivery_address'] ?? null,
                 'total_amount' => $this->formatCents($totalCents),
-                'payment_status' => $amountPaidCents === $totalCents
+                'payment_status' => $settled
                     ? 'paid'
                     : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
             ]);
@@ -273,8 +205,7 @@ class UnpaidPaymentService
             return $transaction->fresh([
                 'items.product',
                 'user',
-                'unpaidPayments.product',
-                'unpaidPayments.updatedBy',
+                'unpaidPayment.updatedBy',
             ]);
         });
     }
@@ -282,29 +213,33 @@ class UnpaidPaymentService
     public function updateCumulativePayment(UnpaidPayment $unpaidPayment, int $amountPaidCents, User $updatedBy): UnpaidPayment
     {
         return DB::transaction(function () use ($unpaidPayment, $amountPaidCents, $updatedBy) {
-            $transaction = $unpaidPayment->transaction_id !== null
-                ? SalesTransaction::query()->lockForUpdate()->findOrFail($unpaidPayment->transaction_id)
-                : null;
+            $transaction = SalesTransaction::query()->lockForUpdate()->findOrFail($unpaidPayment->transaction_id);
 
             $payment = UnpaidPayment::query()
                 ->whereKey($unpaidPayment->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($payment->transaction_id !== null && (int) $payment->transaction_id !== $transaction?->id) {
+            if ((int) $payment->transaction_id !== $transaction->id) {
                 throw ValidationException::withMessages([
                     'amount_paid' => 'The linked sale has changed. Please reload and try again.',
                 ]);
             }
 
-            if ($transaction?->unpaidPayments()->where('id', '!=', $payment->id)->exists()) {
+            if ($transaction->payment_status === 'paid') {
                 throw ValidationException::withMessages([
-                    'amount_paid' => 'This sale has multiple unpaid records. Update the transaction payment instead.',
+                    'amount_paid' => 'This unpaid transaction is already settled.',
                 ]);
             }
 
             $currentPaidCents = $this->toCents($payment->amount_paid);
-            $totalCents = $currentPaidCents + $this->toCents($payment->balance);
+            $totalCents = $this->toCents($transaction->total_amount);
+
+            if ($currentPaidCents + $this->toCents($payment->balance) !== $totalCents) {
+                throw ValidationException::withMessages([
+                    'amount_paid' => 'The sale balance does not match its total. Please review this sale.',
+                ]);
+            }
 
             if ($amountPaidCents < $currentPaidCents || $amountPaidCents > $totalCents) {
                 throw ValidationException::withMessages([
@@ -323,16 +258,25 @@ class UnpaidPaymentService
                 'updated_by' => $updatedBy->id,
             ]);
 
-            if ($transaction) {
-                $transaction->update([
-                    'payment_status' => $settled
-                        ? 'paid'
-                        : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
-                ]);
-            }
+            $transaction->update([
+                'payment_status' => $settled
+                    ? 'paid'
+                    : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
+            ]);
 
-            return $payment->load(['product', 'salesTransaction', 'updatedBy']);
+            return $payment->load(['salesTransaction', 'updatedBy']);
         });
+    }
+
+    private function rejectDuplicateProducts(array $rows): void
+    {
+        $productIds = array_map(fn (array $row): int => (int) $row['product_id'], $rows);
+
+        if (count($productIds) !== count(array_unique($productIds))) {
+            throw ValidationException::withMessages([
+                'products' => 'A product can only be selected once per update.',
+            ]);
+        }
     }
 
     private function generateTransactionNumber(): string
