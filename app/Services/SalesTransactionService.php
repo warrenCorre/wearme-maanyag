@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 class SalesTransactionService
 {
-    public function createPaidSale(array $data, User $cashier): SalesTransaction
+    public function createPaidSale(array $data, User $recordedBy): SalesTransaction
     {
         if (($data['payment_status'] ?? null) !== 'paid') {
             throw ValidationException::withMessages([
@@ -19,7 +19,7 @@ class SalesTransactionService
             ]);
         }
 
-        return DB::transaction(function () use ($data, $cashier) {
+        return DB::transaction(function () use ($data, $recordedBy) {
             $items = collect($data['items'] ?? [])
                 ->filter(fn (array $item) => filled($item['product_id'] ?? null))
                 ->values();
@@ -83,7 +83,7 @@ class SalesTransactionService
                 'online_platform' => $data['online_platform'] ?? '',
                 'total_amount' => number_format($totalCents / 100, 2, '.', ''),
                 'payment_status' => 'paid',
-                'cashier_id' => $cashier->id,
+                'recorded_by' => $recordedBy->id,
                 'transaction_date' => now(),
             ]);
 
@@ -92,7 +92,7 @@ class SalesTransactionService
 
                 $product->update([
                     'quantity' => $product->quantity - $preparedItem['quantity'],
-                    'updated_by' => $cashier->id,
+                    'updated_by' => $recordedBy->id,
                 ]);
 
                 $transaction->items()->create([

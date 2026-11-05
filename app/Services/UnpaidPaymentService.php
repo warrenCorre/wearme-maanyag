@@ -68,7 +68,7 @@ class UnpaidPaymentService
                 'payment_status' => $amountPaidCents > 0
                     ? 'partially_paid'
                     : 'unpaid',
-                'cashier_id' => $updatedBy->id,
+                'recorded_by' => $updatedBy->id,
                 'transaction_date' => now(),
             ]);
 

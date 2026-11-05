@@ -19,7 +19,7 @@ class SalesTransaction extends Model
         'delivery_address',
         'total_amount',
         'payment_status',
-        'cashier_id',
+        'recorded_by',
         'transaction_date',
     ];
 
@@ -35,7 +35,7 @@ class SalesTransaction extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'cashier_id')->withTrashed();
+        return $this->belongsTo(User::class, 'recorded_by')->withTrashed();
     }
 
     public function items(): HasMany

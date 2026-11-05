@@ -33,7 +33,7 @@ class SalesTransactionCustomerDetailsTest extends TestCase
             'delivery_address' => 'Synthetic delivery address',
             'total_amount' => '150.00',
             'payment_status' => 'partially_paid',
-            'cashier_id' => $cashier->id,
+            'recorded_by' => $cashier->id,
             'transaction_date' => '2026-11-05 10:00:00',
         ]);
 
@@ -64,7 +64,7 @@ class SalesTransactionCustomerDetailsTest extends TestCase
             'online_platform' => 'N/A',
             'total_amount' => '50.00',
             'payment_status' => 'paid',
-            'cashier_id' => $cashier->id,
+            'recorded_by' => $cashier->id,
             'transaction_date' => '2026-11-05 11:00:00',
         ]);
 

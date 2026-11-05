@@ -136,7 +136,7 @@ class UnpaidPaymentServiceTest extends TestCase
             'online_platform' => 'N/A',
             'total_amount' => $itemCount * 10,
             'payment_status' => 'unpaid',
-            'cashier_id' => $owner->id,
+            'recorded_by' => $owner->id,
             'transaction_date' => '2026-11-05 10:00:00',
         ]);
 
