@@ -48,7 +48,7 @@ class User extends Authenticatable
 
     public function salesTransactions(): HasMany
     {
-        return $this->hasMany(SalesTransaction::class, 'cashier_id');
+        return $this->hasMany(SalesTransaction::class, 'recorded_by');
     }
 
     public function unpaidPayments(): HasMany

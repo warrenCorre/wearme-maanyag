@@ -46,7 +46,7 @@ class AssistantContextServiceTest extends TestCase
             'online_platform' => 'N/A',
             'total_amount' => 50,
             'payment_status' => 'paid',
-            'cashier_id' => $ownerId,
+            'recorded_by' => $ownerId,
             'transaction_date' => '2026-10-10 12:00:00',
         ]);
 
@@ -71,7 +71,7 @@ class AssistantContextServiceTest extends TestCase
             'online_platform' => 'N/A',
             'total_amount' => 35,
             'payment_status' => 'partially_paid',
-            'cashier_id' => $ownerId,
+            'recorded_by' => $ownerId,
             'transaction_date' => '2026-10-10 12:00:00',
         ]);
 
