@@ -17,6 +17,7 @@ class InventoryReportExport implements FromCollection, WithHeadings
             $product->product_code,
             $product->product_name,
             $product->category?->name ?? 'Uncategorized',
+            $product->collection_date?->toDateString() ?? 'Not recorded',
             (float) $product->price,
             (int) $product->quantity,
             (int) $product->low_stock_threshold,
@@ -26,6 +27,6 @@ class InventoryReportExport implements FromCollection, WithHeadings
 
     public function headings(): array
     {
-        return ['Code', 'Product', 'Category', 'Price (PHP)', 'Quantity', 'Reorder At', 'Stock Status'];
+        return ['Code', 'Product', 'Category', 'Collection Date', 'Price (PHP)', 'Quantity', 'Reorder At', 'Stock Status'];
     }
 }

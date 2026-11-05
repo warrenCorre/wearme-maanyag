@@ -38,12 +38,13 @@
             <p class="mt-6 rounded-xl bg-slate-50 p-4 text-sm font-medium text-slate-500">No active products have been created yet.</p>
         @else
             <div class="mt-6 overflow-x-auto">
-                <table class="w-full min-w-[900px] text-left text-sm">
+                <table class="w-full min-w-[1050px] text-left text-sm">
                     <thead class="border-b-2 border-slate-900 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                             <th class="px-3 py-3">Photo</th>
                             <th class="px-3 py-3">Product Name</th>
                             <th class="px-3 py-3">Category</th>
+                            <th class="px-3 py-3">Collection Date</th>
                             <th class="px-3 py-3">Price</th>
                             <th class="px-3 py-3">Stock</th>
                             <th class="px-3 py-3">Status</th>
@@ -66,6 +67,7 @@
                                     <p class="text-xs font-medium text-slate-500">{{ $product->product_code }}</p>
                                 </td>
                                 <td class="px-3 py-4 font-semibold text-slate-600">{{ $product->category->category_name }}</td>
+                                <td class="px-3 py-4 font-semibold text-slate-600">{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                                 <td class="px-3 py-4 font-black text-slate-700">₱{{ number_format((float) $product->price, 2) }}</td>
                                 <td class="px-3 py-4"><span class="font-black {{ $isLowStock ? 'text-rose-600' : 'text-slate-700' }}">{{ $product->quantity }}</span><span class="block text-xs font-medium text-slate-500">Alert at {{ $product->low_stock_threshold }}</span></td>
                                 <td class="px-3 py-4"><span class="inline-flex rounded-full px-2.5 py-1 text-xs font-black {{ $isLowStock ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700' }}">{{ $isLowStock ? 'Low-Stock' : 'Available' }}</span></td>

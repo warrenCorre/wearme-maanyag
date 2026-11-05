@@ -15,6 +15,36 @@ class ProductControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_owner_sees_recorded_and_unknown_collection_dates_in_the_product_list(): void
+    {
+        $owner = $this->createOwner();
+        $category = Category::query()->create(['category_name' => 'Pants', 'status' => 'active']);
+        $product = Product::query()->create([
+            'product_code' => 'SYN-001',
+            'product_name' => 'Synthetic Pants',
+            'category_id' => $category->id,
+            'description' => 'Synthetic product.',
+            'collection_date' => '2026-10-15',
+            'price' => 100,
+            'quantity' => 2,
+            'low_stock_threshold' => 1,
+            'image' => 'products/synthetic.jpg',
+            'status' => 'active',
+            'created_by' => $owner->id,
+            'updated_by' => $owner->id,
+        ]);
+        $legacyProduct = $product->replicate();
+        $legacyProduct->product_code = 'SYN-002';
+        $legacyProduct->collection_date = null;
+        $legacyProduct->save();
+
+        $response = $this->actingAs($owner)->get(route('products.index'));
+
+        $response->assertSee('Collection Date');
+        $response->assertSee('2026-10-15');
+        $response->assertSee('Not recorded');
+    }
+
     public function test_owner_sees_the_collection_date_field_on_the_product_form(): void
     {
         $owner = $this->createOwner();
