@@ -18,6 +18,7 @@ class Product extends Model
         'product_name',
         'category_id',
         'description',
+        'collection_date',
         'price',
         'quantity',
         'low_stock_threshold',
@@ -30,6 +31,7 @@ class Product extends Model
     protected function casts(): array
     {
         return [
+            'collection_date' => 'date',
             'price' => 'decimal:2',
             'quantity' => 'integer',
             'low_stock_threshold' => 'integer',

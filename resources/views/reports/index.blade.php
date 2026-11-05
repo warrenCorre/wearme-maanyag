@@ -170,6 +170,7 @@
                                 <th class="py-3 pr-4">Code</th>
                                 <th class="py-3 pr-4">Product</th>
                                 <th class="py-3 pr-4">Category</th>
+                                <th class="py-3 pr-4">Collection Date</th>
                                 <th class="py-3 pr-4 text-right">Price</th>
                                 <th class="py-3 pr-4 text-right">Qty</th>
                                 <th class="py-3 pr-4 text-right">Reorder At</th>
@@ -183,6 +184,7 @@
                                     <td class="py-3 pr-4 font-bold tabular-nums text-slate-900">{{ $product->product_code }}</td>
                                     <td class="py-3 pr-4 font-bold text-slate-900">{{ $product->product_name }}</td>
                                     <td class="py-3 pr-4 font-medium text-slate-600">{{ $product->category?->name ?? 'Uncategorized' }}</td>
+                                    <td class="py-3 pr-4 font-medium tabular-nums text-slate-600">{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                                     <td class="py-3 pr-4 text-right font-semibold tabular-nums text-slate-700">{{ Number::currency($product->price, 'PHP') }}</td>
                                     <td class="py-3 pr-4 text-right font-black tabular-nums text-slate-900">{{ $product->quantity }}</td>
                                     <td class="py-3 pr-4 text-right font-semibold tabular-nums text-slate-600">{{ $product->low_stock_threshold }}</td>

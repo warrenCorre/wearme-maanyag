@@ -47,6 +47,11 @@
                     </select>
                 </div>
                 <div>
+                    <label class="text-sm font-bold text-slate-700" for="collection_date">Collection Date</label>
+                    <input class="mt-2 w-full rounded-xl border-2 border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100" type="date" id="collection_date" name="collection_date" value="{{ old('collection_date', $product->collection_date?->toDateString()) }}" max="{{ today('Asia/Manila')->toDateString() }}" required>
+                    <p class="mt-2 text-xs font-medium text-slate-500">Enter the actual date the store received this product.</p>
+                </div>
+                <div>
                     <label class="text-sm font-bold text-slate-700" for="price">Price</label>
                     <div class="mt-2 flex rounded-xl border-2 border-slate-300 bg-white focus-within:border-rose-500 focus-within:ring-2 focus-within:ring-rose-100">
                         <span class="flex items-center px-3 text-sm font-bold text-slate-500">₱</span>

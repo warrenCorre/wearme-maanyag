@@ -182,6 +182,7 @@ class ProductController extends Controller
                 }),
             ],
             'description' => ['required', 'string'],
+            'collection_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.today('Asia/Manila')->toDateString()],
             'price' => ['required', 'numeric', 'min:0'],
             'quantity' => ['required', 'integer', 'min:0'],
             'low_stock_threshold' => ['required', 'integer', 'min:0'],

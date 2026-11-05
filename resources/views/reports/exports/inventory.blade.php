@@ -61,6 +61,7 @@
                     <th>Code</th>
                     <th>Product</th>
                     <th>Category</th>
+                    <th>Collection Date</th>
                     <th class="num">Price (PHP)</th>
                     <th class="num">Qty</th>
                     <th class="num">Reorder</th>
@@ -73,6 +74,7 @@
                         <td>{{ $product->product_code }}</td>
                         <td>{{ $product->product_name }}</td>
                         <td>{{ $product->category?->name ?? 'Uncategorized' }}</td>
+                        <td>{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                         <td class="num">{{ number_format((float) $product->price, 2) }}</td>
                         <td class="num">{{ $product->quantity }}</td>
                         <td class="num">{{ $product->low_stock_threshold }}</td>
