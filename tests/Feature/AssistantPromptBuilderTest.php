@@ -46,6 +46,14 @@ class AssistantPromptBuilderTest extends TestCase
                         'sales_total' => 120.0,
                     ],
                 ],
+                'collection_dates' => [
+                    [
+                        'product_name' => 'Synthetic Scarf',
+                        'collection_date' => '2026-10-05',
+                        'customer_name' => 'Synthetic Customer',
+                        'private_note' => 'Not approved for model context.',
+                    ],
+                ],
                 'unpaid_summary' => [
                     'pending_transaction_count' => 1,
                     'pending_record_count' => 2,
@@ -56,6 +64,7 @@ class AssistantPromptBuilderTest extends TestCase
                 'scopes' => [
                     'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
                     'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+                    'collection_dates' => 'Up to 10 active products with recorded collection dates, newest first; excludes archived products and unknown dates.',
                     'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
                     'internal_note' => 'Not approved for model context.',
                 ],
@@ -63,6 +72,7 @@ class AssistantPromptBuilderTest extends TestCase
                     'sales' => '2026-10-15',
                     'inventory' => '2026-11-02',
                     'best_sellers' => '2026-11-02',
+                    'collection_dates' => '2026-11-02',
                     'unpaid_summary' => '2026-11-02',
                     'internal_note' => 'Not approved for model context.',
                 ],
@@ -92,18 +102,23 @@ class AssistantPromptBuilderTest extends TestCase
         $this->assertSame(345.67, $safeContext['sales']['summary']['total_sales']);
         $this->assertSame('Synthetic Jacket', $safeContext['inventory']['low_stock_products'][0]['product_name']);
         $this->assertSame([
+            ['product_name' => 'Synthetic Scarf', 'collection_date' => '2026-10-05'],
+        ], $safeContext['collection_dates']);
+        $this->assertSame([
             'pending_transaction_count' => 1,
             'outstanding_balance' => 75,
         ], $safeContext['unpaid_summary']);
         $this->assertSame([
             'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
             'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+            'collection_dates' => 'Up to 10 active products with recorded collection dates, newest first; excludes archived products and unknown dates.',
             'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
         ], $safeContext['scopes']);
         $this->assertSame([
             'sales' => '2026-10-15',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
+            'collection_dates' => '2026-11-02',
             'unpaid_summary' => '2026-11-02',
         ], $safeContext['as_of']);
         $this->assertSame([
@@ -125,6 +140,7 @@ class AssistantPromptBuilderTest extends TestCase
         $this->assertArrayNotHasKey('customer_name', $safeContext['sales']);
         $this->assertArrayNotHasKey('customer_contact', $safeContext['inventory']['stats']);
         $this->assertArrayNotHasKey('customer_name', $safeContext['inventory']['low_stock_products'][0]);
+        $this->assertArrayNotHasKey('customer_name', $safeContext['collection_dates'][0]);
         $this->assertArrayNotHasKey('customer_name', $safeContext['unpaid_summary']);
         $this->assertArrayNotHasKey('pending_record_count', $safeContext['unpaid_summary']);
         $this->assertArrayNotHasKey('unpaid_records', $safeContext);

@@ -28,7 +28,7 @@ class AssistantResponseValidator
                     'properties' => [
                         'type' => [
                             'type' => 'string',
-                            'enum' => ['sales', 'inventory', 'best_sellers', 'unpaid_summary'],
+                            'enum' => ['sales', 'inventory', 'best_sellers', 'collection_dates', 'unpaid_summary'],
                             'description' => 'Source type copied from allowed_sources.',
                         ],
                         'label' => [
@@ -87,6 +87,11 @@ class AssistantResponseValidator
             'type' => 'best_sellers',
             'label' => 'Best sellers',
             'as_of_key' => 'best_sellers',
+        ],
+        'collection_dates' => [
+            'type' => 'collection_dates',
+            'label' => 'Collection dates',
+            'as_of_key' => 'collection_dates',
         ],
         'unpaid_summary' => [
             'type' => 'unpaid_summary',

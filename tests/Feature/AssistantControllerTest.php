@@ -37,7 +37,7 @@ class AssistantControllerTest extends TestCase
         $cashier = $this->createUser('cashier');
 
         $this->actingAs($cashier)
-            ->post(route('assistant.ask'), ['question' => 'Show me sales for this month'])
+            ->post(route('assistant.ask'), ['question' => 'List recently collected products'])
             ->assertForbidden();
     }
 
@@ -49,8 +49,17 @@ class AssistantControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Maanyag Assistant');
+        $response->assertSee('Your smart assistant, Maanyag!');
+        $response->assertSee('New Chat');
+        $response->assertSee('href="'.route('assistant.index').'"', false);
         $response->assertSee('Maximum 500 characters');
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
+        $response->assertSee('List recently collected products.');
+        $response->assertSee('value="List recently collected products"', false);
+        $response->assertSee('Check Inventory');
+        $response->assertSee('Sales Insights');
+        $response->assertDontSee('Generate Report');
+        $response->assertViewMissing('result');
     }
 
     public function test_owner_receives_a_mocked_answer_without_calling_gemini(): void
@@ -64,6 +73,9 @@ class AssistantControllerTest extends TestCase
                 ->andReturn([
                     'status' => 'answered',
                     'message' => 'Synthetic aggregate answer.',
+                    'sources' => [
+                        ['type' => 'unpaid_summary', 'label' => 'Unpaid summary', 'as_of' => '2026-11-06'],
+                    ],
                 ]);
         });
 
@@ -72,7 +84,33 @@ class AssistantControllerTest extends TestCase
         ]);
 
         $response->assertOk();
+        $response->assertSee('How many unpaid transactions?');
         $response->assertSee('Synthetic aggregate answer.');
+        $response->assertSee('Unpaid summary');
+        $response->assertSee('As of 2026-11-06');
+    }
+
+    public function test_owner_sees_escaped_question_and_answer_in_the_chat(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $question = '<script>alert("question")</script>';
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use ($question): void {
+            $mock->shouldReceive('answer')
+                ->once()
+                ->with($question)
+                ->andReturn([
+                    'status' => 'answered',
+                    'message' => '<img src=x onerror=alert(1)>',
+                ]);
+        });
+
+        $response = $this->actingAs($owner)->post(route('assistant.ask'), ['question' => $question]);
+
+        $response->assertSee('&lt;script&gt;', false);
+        $response->assertSee('&lt;img src=x onerror=alert(1)&gt;', false);
+        $response->assertDontSee('<script>', false);
+        $response->assertDontSee('<img src=x onerror=alert(1)>', false);
     }
 
     public function test_owner_sees_the_disabled_message_when_store_data_sharing_is_off(): void
@@ -81,11 +119,24 @@ class AssistantControllerTest extends TestCase
         $owner = $this->createUser('store_owner');
 
         $response = $this->actingAs($owner)->post(route('assistant.ask'), [
-            'question' => 'Show me sales for this month',
+            'question' => 'List recently collected products',
         ]);
 
         $response->assertOk();
         $response->assertSee('disabled until sharing store data');
+    }
+
+    public function test_owner_sees_unsupported_question_as_a_declined_chat_message(): void
+    {
+        $owner = $this->createUser('store_owner');
+
+        $response = $this->actingAs($owner)->post(route('assistant.ask'), [
+            'question' => 'What is the weather today?',
+        ]);
+
+        $response->assertSee('What is the weather today?');
+        $response->assertSee('Not supported');
+        $response->assertDontSee('Source:', false);
     }
 
     public function test_question_is_required(): void

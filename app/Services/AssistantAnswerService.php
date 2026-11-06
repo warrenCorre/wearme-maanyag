@@ -113,6 +113,11 @@ class AssistantAnswerService
                 $context,
                 'best_sellers',
             ),
+            'collection_dates' => $this->withScope(
+                ['collection_dates' => $context['collection_dates'] ?? []],
+                $context,
+                'collection_dates',
+            ),
             'unpaid_summary' => $this->withScope(
                 ['unpaid_summary' => $context['unpaid_summary'] ?? []],
                 $context,
@@ -136,6 +141,7 @@ class AssistantAnswerService
             'inventory_summary', 'low_stock' => 'inventory',
             'best_sellers' => 'best_sellers',
             'unpaid_summary' => 'unpaid_summary',
+            'collection_dates' => 'collection_dates',
             default => null,
         };
 

@@ -70,6 +70,15 @@ class AssistantQuestionPolicy
             );
         }
 
+        if (preg_match('/^(?:(?:show|list|give)\s+(?:me\s+)?|what\s+are\s+)?(?:the\s+)?(?:recently collected products|products collected recently|latest collection dates|recent collection dates)$/', $normalizedQuestion) === 1) {
+            return $this->allowed(
+                'collection_dates',
+                null,
+                $date,
+                'List the most recently collected active products and their recorded collection dates using only the verified context.',
+            );
+        }
+
         if (
             preg_match('/^(?:(?:what is|show|give me|summarize|how much(?: is)?)\s+)?(?:the\s+)?(?:total|overall|aggregate)\s+(?:unpaid|outstanding)\s+(?:balance|amount|transactions?|payments?|count)(?:\s+summary)?$/', $normalizedQuestion) === 1
             || preg_match('/^how many (?:unpaid|pending) (?:transactions?|payments?)$/', $normalizedQuestion) === 1
@@ -82,7 +91,7 @@ class AssistantQuestionPolicy
             );
         }
 
-        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, best-seller, or aggregate unpaid question.');
+        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question.');
     }
 
     private function normalize(string $question): string

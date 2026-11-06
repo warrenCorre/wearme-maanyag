@@ -51,6 +51,45 @@ class AssistantResponseValidatorTest extends TestCase
         $this->assertSame([], $this->validator->allowedSourcesFor('unknown_intent', $context));
     }
 
+    public function test_collection_date_answers_require_the_collection_source_and_verified_date(): void
+    {
+        $context = [
+            'collection_dates' => [['product_name' => 'Synthetic Scarf', 'collection_date' => '2026-10-05']],
+            'as_of' => ['collection_dates' => '2026-11-02'],
+        ];
+        $sources = $this->validator->allowedSourcesFor('collection_dates', $context);
+
+        $this->assertSame([
+            ['type' => 'collection_dates', 'label' => 'Collection dates', 'as_of' => '2026-11-02'],
+        ], $sources);
+
+        $valid = $this->validator->validate($this->response([
+            'answer' => 'Synthetic Scarf was collected on 2026-10-05.',
+            'answer_type' => 'fact',
+            'sources' => $sources,
+        ]), $context, $sources);
+
+        $this->assertTrue($valid['valid']);
+
+        $unsupportedSource = $this->validator->validate($this->response([
+            'answer' => 'Synthetic Scarf was collected on 2026-10-05.',
+            'answer_type' => 'fact',
+            'sources' => $this->salesSources(),
+        ]), $context, $sources);
+
+        $this->assertFalse($unsupportedSource['valid']);
+        $this->assertSame('unsupported_source', $unsupportedSource['error']);
+
+        $ungroundedDate = $this->validator->validate($this->response([
+            'answer' => 'Synthetic Scarf was collected on 2026-12-30.',
+            'answer_type' => 'fact',
+            'sources' => $sources,
+        ]), $context, $sources);
+
+        $this->assertFalse($ungroundedDate['valid']);
+        $this->assertSame('ungrounded_number', $ungroundedDate['error']);
+    }
+
     public function test_it_rejects_malformed_json(): void
     {
         $result = $this->validator->validate('{', $this->salesContext(), $this->salesSources());
