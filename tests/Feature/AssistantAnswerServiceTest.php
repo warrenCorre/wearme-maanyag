@@ -218,6 +218,79 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('One pending balance per sale', $capturedPrompt);
     }
 
+    public function test_it_keeps_collection_dates_behind_the_disabled_store_data_gate(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'List recently collected products',
+            CarbonImmutable::parse('2026-11-01'),
+        );
+
+        $this->assertSame('disabled', $result['status']);
+    }
+
+    public function test_it_sends_only_collection_dates_and_their_scope_to_the_mocked_client(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')
+            ->once()
+            ->andReturn([
+                'collection_dates' => [
+                    ['product_name' => 'Synthetic Scarf', 'collection_date' => '2026-10-05'],
+                ],
+                'as_of' => ['collection_dates' => '2026-11-02', 'sales' => '2026-11-01'],
+                'scopes' => [
+                    'collection_dates' => 'Up to 10 active products with recorded collection dates, newest first; excludes archived products and unknown dates.',
+                    'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
+                ],
+                'sales' => ['summary' => ['total_sales' => 999.0]],
+                'unpaid_summary' => ['customer_name' => 'Synthetic Customer'],
+            ]);
+
+        $capturedPrompt = '';
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')
+            ->once()
+            ->withArgs(function (string $prompt, string $systemInstruction, array $schema) use (&$capturedPrompt): bool {
+                $capturedPrompt = $prompt;
+
+                return str_contains($prompt, 'Synthetic Scarf')
+                    && str_contains($prompt, '2026-10-05')
+                    && str_contains($prompt, 'excludes archived products and unknown dates')
+                    && ! str_contains($prompt, '999')
+                    && ! str_contains($prompt, 'Synthetic Customer')
+                    && str_contains($systemInstruction, 'Collection dates belong to active products')
+                    && $schema === AssistantResponseValidator::RESPONSE_SCHEMA;
+            })
+            ->andReturn($this->structuredResponse(
+                'Synthetic Scarf was collected on 2026-10-05.',
+                'fact',
+                [['type' => 'collection_dates', 'label' => 'Collection dates', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'List recently collected products',
+            CarbonImmutable::parse('2026-11-01'),
+        );
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Synthetic Scarf was collected on 2026-10-05.', $result['message']);
+        $this->assertSame([
+            ['type' => 'collection_dates', 'label' => 'Collection dates', 'as_of' => '2026-11-02'],
+        ], $result['sources']);
+        $this->assertStringNotContainsString('List recently collected products', $capturedPrompt);
+        $this->assertStringNotContainsString('total_sales', $capturedPrompt);
+    }
+
     public function test_it_rejects_invalid_structured_output_without_returning_raw_text(): void
     {
         config(['services.gemini.allow_store_data' => true]);
@@ -325,7 +398,7 @@ class AssistantAnswerServiceTest extends TestCase
     }
 
     /**
-     * @return array{sales: string, inventory: string, best_sellers: string, unpaid_summary: string}
+     * @return array{sales: string, inventory: string, best_sellers: string, collection_dates: string, unpaid_summary: string}
      */
     private function asOf(): array
     {
@@ -333,6 +406,7 @@ class AssistantAnswerServiceTest extends TestCase
             'sales' => '2026-11-01',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
+            'collection_dates' => '2026-11-02',
             'unpaid_summary' => '2026-11-02',
         ];
     }

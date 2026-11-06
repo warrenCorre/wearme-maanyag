@@ -65,6 +65,7 @@
                     <li>Summarize inventory status.</li>
                     <li>List low-stock products.</li>
                     <li>List best-selling products.</li>
+                    <li>List recently collected products.</li>
                     <li>How many unpaid transactions?</li>
                 </ul>
             </div>

@@ -37,7 +37,7 @@ class AssistantControllerTest extends TestCase
         $cashier = $this->createUser('cashier');
 
         $this->actingAs($cashier)
-            ->post(route('assistant.ask'), ['question' => 'Show me sales for this month'])
+            ->post(route('assistant.ask'), ['question' => 'List recently collected products'])
             ->assertForbidden();
     }
 
@@ -51,6 +51,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Maanyag Assistant');
         $response->assertSee('Maximum 500 characters');
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
+        $response->assertSee('List recently collected products.');
     }
 
     public function test_owner_receives_a_mocked_answer_without_calling_gemini(): void
@@ -81,7 +82,7 @@ class AssistantControllerTest extends TestCase
         $owner = $this->createUser('store_owner');
 
         $response = $this->actingAs($owner)->post(route('assistant.ask'), [
-            'question' => 'Show me sales for this month',
+            'question' => 'List recently collected products',
         ]);
 
         $response->assertOk();

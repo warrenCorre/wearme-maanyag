@@ -105,6 +105,7 @@ class AssistantContextServiceTest extends TestCase
         $this->assertSame('Synthetic Jacket', $context['inventory']['low_stock_products'][0]['product_name']);
         $this->assertSame('Synthetic Jacket', $context['best_sellers'][0]['product_name']);
         $this->assertSame(3, $context['best_sellers'][0]['units_sold']);
+        $this->assertSame([], $context['collection_dates']);
         $this->assertSame([
             'pending_transaction_count' => 1,
             'outstanding_balance' => 25.0,
@@ -112,12 +113,14 @@ class AssistantContextServiceTest extends TestCase
         $this->assertSame([
             'sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.',
             'best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.',
+            'collection_dates' => 'Up to 10 active products with recorded collection dates, newest first; excludes archived products and unknown dates.',
             'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
         ], $context['scopes']);
         $this->assertSame([
             'sales' => '2026-10-15',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
+            'collection_dates' => '2026-11-02',
             'unpaid_summary' => '2026-11-02',
         ], $context['as_of']);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($context));
@@ -171,11 +174,53 @@ class AssistantContextServiceTest extends TestCase
             'sales' => '2026-10-15',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
+            'collection_dates' => '2026-11-02',
             'unpaid_summary' => '2026-11-02',
         ], $context['as_of']);
         $this->assertStringNotContainsString('Synthetic Customer', json_encode($context));
         $this->assertArrayNotHasKey('customer_name', $context['unpaid_summary']);
         $this->assertArrayNotHasKey('customer_contact', $context['unpaid_summary']);
+    }
+
+    public function test_it_lists_only_the_ten_latest_active_products_with_recorded_collection_dates(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-02 10:00:00'));
+        $ownerId = DB::table('tbl_users')->insertGetId([
+            'name' => 'Synthetic Owner', 'email' => 'owner@example.test',
+            'password' => 'synthetic-password', 'phone' => '0000000000',
+            'address' => 'Synthetic address', 'role' => 'store_owner',
+            'profile_image' => '', 'status' => 'active',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $categoryId = Category::query()->create(['category_name' => 'Synthetic clothing', 'status' => 'active'])->id;
+
+        for ($day = 1; $day <= 12; $day++) {
+            $this->createProduct($ownerId, $categoryId, "Synthetic Item {$day}", 2, 1)
+                ->update(['collection_date' => sprintf('2026-10-%02d', $day)]);
+        }
+
+        $this->createProduct($ownerId, $categoryId, 'Synthetic Unknown Date', 2, 1);
+        $this->createProduct($ownerId, $categoryId, 'Synthetic Archived', 2, 1)
+            ->update(['collection_date' => '2026-10-31', 'status' => 'archived']);
+        $this->createProduct($ownerId, $categoryId, 'Synthetic Deleted', 2, 1)
+            ->update(['collection_date' => '2026-10-30']);
+        Product::query()->where('product_name', 'Synthetic Deleted')->firstOrFail()->delete();
+
+        $context = app(AssistantContextService::class)->build('monthly', CarbonImmutable::parse('2026-10-15'));
+
+        $this->assertCount(10, $context['collection_dates']);
+        $this->assertSame(
+            ['product_name' => 'Synthetic Item 12', 'collection_date' => '2026-10-12'],
+            $context['collection_dates'][0],
+        );
+        $this->assertSame(
+            ['product_name' => 'Synthetic Item 3', 'collection_date' => '2026-10-03'],
+            $context['collection_dates'][9],
+        );
+        $this->assertSame('2026-11-02', $context['as_of']['collection_dates']);
+        $this->assertStringNotContainsString('Synthetic Archived', json_encode($context['collection_dates']));
+        $this->assertStringNotContainsString('Synthetic Unknown Date', json_encode($context['collection_dates']));
+        $this->assertStringNotContainsString('Synthetic Deleted', json_encode($context['collection_dates']));
     }
 
     private function createProduct(int $ownerId, int $categoryId, string $name, int $quantity, int $threshold): Product
