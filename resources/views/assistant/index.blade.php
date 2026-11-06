@@ -147,8 +147,26 @@
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
                     </button>
                 </div>
-                <p class="mt-2 text-xs font-medium text-slate-500">Maximum 500 characters. Customer-specific unpaid questions are not supported. Each question is handled separately.</p>
+                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Customer-specific unpaid questions are not supported. Each question is handled separately.</p>
             </form>
         </section>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        const assistantQuestion = document.getElementById('question');
+
+        assistantQuestion.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.keyCode === 229) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (!event.repeat && assistantQuestion.value.trim() !== '') {
+                assistantQuestion.form.requestSubmit();
+            }
+        });
+    </script>
+@endpush

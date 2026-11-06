@@ -62,6 +62,15 @@ class AssistantControllerTest extends TestCase
         $response->assertViewMissing('result');
     }
 
+    public function test_owner_sees_keyboard_instructions_for_the_question_composer(): void
+    {
+        $owner = $this->createUser('store_owner');
+
+        $response = $this->actingAs($owner)->get(route('assistant.index'));
+
+        $response->assertSee('Enter to send · Shift+Enter for a new line.');
+    }
+
     public function test_owner_receives_a_mocked_answer_without_calling_gemini(): void
     {
         $owner = $this->createUser('store_owner');
@@ -109,7 +118,7 @@ class AssistantControllerTest extends TestCase
 
         $response->assertSee('&lt;script&gt;', false);
         $response->assertSee('&lt;img src=x onerror=alert(1)&gt;', false);
-        $response->assertDontSee('<script>', false);
+        $response->assertDontSee($question, false);
         $response->assertDontSee('<img src=x onerror=alert(1)>', false);
     }
 
