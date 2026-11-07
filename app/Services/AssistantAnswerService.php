@@ -24,12 +24,13 @@ class AssistantAnswerService
      *     message: string,
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
-     *     confidence?: string
+     *     confidence?: string,
+     *     visit_context?: array{intent: string}
      * }
      */
-    public function answer(string $question, ?CarbonInterface $referenceDate = null): array
+    public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
-        $decision = $this->questionPolicy->evaluate($question, $referenceDate);
+        $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
 
         if (! $decision['allowed']) {
             return [
@@ -83,6 +84,7 @@ class AssistantAnswerService
             'sources' => $response['sources'],
             'answer_type' => $response['answer_type'],
             'confidence' => $response['confidence'],
+            ...(! $response['refusal'] ? ['visit_context' => ['intent' => $intent]] : []),
         ];
     }
 

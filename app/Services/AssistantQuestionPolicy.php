@@ -10,7 +10,7 @@ class AssistantQuestionPolicy
     /**
      * @return array{allowed: bool, intent: ?string, period: ?string, date: string, safe_question: ?string, reason: ?string}
      */
-    public function evaluate(string $question, ?CarbonInterface $referenceDate = null): array
+    public function evaluate(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
         $date = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::today());
         $normalizedQuestion = $this->normalize($question);
@@ -89,6 +89,41 @@ class AssistantQuestionPolicy
                 $date,
                 'Report only aggregate pending sale counts and outstanding balances using the verified context. Never disclose customer details.',
             );
+        }
+
+        if ($visitContext !== null && in_array($visitContext['intent'] ?? null, [
+            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
+        ], true)) {
+            $followUp = preg_replace('/^(?:(?:and|also|then)\s+|(?:what|how)\s+about\s+)(?:the\s+)?/', '', $normalizedQuestion) ?? '';
+
+            if ($followUp !== $normalizedQuestion) {
+                if ($followUp === 'sales') {
+                    return $this->denied($date, 'For sales, please specify today, yesterday, this week, this month, or this year.');
+                }
+
+                if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year)$/', $followUp) === 1) {
+                    return $this->evaluate('Show me '.$followUp, $date);
+                }
+
+                $canonicalQuestion = match ($followUp) {
+                    'inventory', 'inventory status' => 'Summarize inventory status',
+                    'low stock', 'low stock products' => 'List low-stock products',
+                    'best sellers', 'best selling products' => 'List best-selling products',
+                    'collection dates', 'recently collected products' => 'List recently collected products',
+                    'unpaid', 'unpaid balance', 'outstanding balance' => 'What is the total unpaid balance?',
+                    'today', 'yesterday', 'this week', 'this month', 'this year' => $visitContext['intent'] === 'sales_summary'
+                        ? 'Show me sales for '.$followUp : null,
+                    default => null,
+                };
+
+                if ($canonicalQuestion !== null) {
+                    return $this->evaluate($canonicalQuestion, $date);
+                }
+            }
+
+            if ($visitContext['intent'] === 'unpaid_summary' && in_array($normalizedQuestion, ['how much is left', 'how much is left unpaid'], true)) {
+                return $this->evaluate('What is the total unpaid balance?', $date);
+            }
         }
 
         return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question.');
