@@ -367,6 +367,42 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame('The assistant is temporarily unavailable. Please try again.', $result['message']);
     }
 
+    public function test_it_uses_current_inventory_facts_for_a_cross_skill_follow_up_without_sending_history(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+
+        $capturedPrompt = '';
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')
+            ->once()
+            ->withArgs(function (string $prompt) use (&$capturedPrompt): bool {
+                $capturedPrompt = $prompt;
+
+                return true;
+            })
+            ->andReturn($this->structuredResponse(
+                'There are 2 units in current stock.',
+                'fact',
+                [['type' => 'inventory', 'label' => 'Inventory summary', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'What about inventory?',
+            CarbonImmutable::parse('2026-11-07'),
+            ['intent' => 'sales_summary', 'history' => 'Synthetic customer private conversation'],
+        );
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame(['intent' => 'inventory_summary'], $result['visit_context']);
+        $this->assertStringContainsString('"total_units": 2', $capturedPrompt);
+        $this->assertStringNotContainsString('Synthetic customer', $capturedPrompt);
+        $this->assertStringNotContainsString('What about inventory?', $capturedPrompt);
+        $this->assertStringNotContainsString('transaction_count', $capturedPrompt);
+    }
+
     /**
      * @return array<string, mixed>
      */

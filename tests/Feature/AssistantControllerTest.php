@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\AssistantAnswerService;
+use App\Services\AssistantContextService;
+use App\Services\GeminiClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
@@ -54,6 +56,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('href="'.route('assistant.index').'"', false);
         $response->assertSee('Maximum 500 characters');
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
+        $response->assertSee('Follow up during this visit');
         $response->assertSee('List recently collected products.');
         $response->assertSee('value="List recently collected products"', false);
         $response->assertSee('Check Inventory');
@@ -78,7 +81,7 @@ class AssistantControllerTest extends TestCase
         $this->mock(AssistantAnswerService::class, function (MockInterface $mock): void {
             $mock->shouldReceive('answer')
                 ->once()
-                ->with('How many unpaid transactions?')
+                ->with('How many unpaid transactions?', null, null)
                 ->andReturn([
                     'status' => 'answered',
                     'message' => 'Synthetic aggregate answer.',
@@ -107,7 +110,7 @@ class AssistantControllerTest extends TestCase
         $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use ($question): void {
             $mock->shouldReceive('answer')
                 ->once()
-                ->with($question)
+                ->with($question, null, null)
                 ->andReturn([
                     'status' => 'answered',
                     'message' => '<img src=x onerror=alert(1)>',
@@ -145,7 +148,7 @@ class AssistantControllerTest extends TestCase
 
         $response->assertSee('What is the weather today?');
         $response->assertSee('Not supported');
-        $response->assertDontSee('Source:', false);
+        $response->assertViewHas('result', fn (array $result): bool => empty($result['sources']));
     }
 
     public function test_question_is_required(): void
@@ -166,6 +169,224 @@ class AssistantControllerTest extends TestCase
         ]);
 
         $response->assertSessionHasErrors('question');
+    }
+
+    public function test_owner_can_follow_up_across_skills_without_exposing_visit_context_in_json(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return [
+                    'status' => 'answered',
+                    'message' => 'Synthetic answer for '.$question,
+                    'visit_context' => ['intent' => $question === 'Show me sales for this month' ? 'sales_summary' : 'inventory_summary'],
+                ];
+            });
+        });
+
+        $first = $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $second = $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $first->assertExactJson(['result' => ['status' => 'answered', 'message' => 'Synthetic answer for Show me sales for this month']]);
+        $second->assertExactJson(['result' => ['status' => 'answered', 'message' => 'Synthetic answer for What about inventory?']]);
+        $this->assertSame([null, ['owner_id' => $owner->id, 'intent' => 'sales_summary']], $receivedContexts);
+    }
+
+    public function test_two_real_answer_requests_retrieve_fresh_skill_context_without_sharing_previous_turns(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 7)->startOfDay());
+        config(['services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('build')->twice()->andReturn(
+                $this->syntheticConversationContext(2),
+                $this->syntheticConversationContext(7),
+            );
+        });
+
+        $prompts = [];
+        $this->mock(GeminiClient::class, function (MockInterface $mock) use (&$prompts): void {
+            $mock->shouldReceive('generateText')->twice()->andReturnUsing(function (string $prompt) use (&$prompts): string {
+                $prompts[] = $prompt;
+
+                return json_encode(count($prompts) === 1
+                    ? [
+                        'answer' => 'Monthly sales totaled PHP 125.00 across 4 transactions.',
+                        'answer_type' => 'calculation',
+                        'sources' => [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-07']],
+                        'confidence' => 'high',
+                        'refusal' => false,
+                    ]
+                    : [
+                        'answer' => 'There are 7 units in current stock.',
+                        'answer_type' => 'fact',
+                        'sources' => [['type' => 'inventory', 'label' => 'Inventory summary', 'as_of' => '2026-11-07']],
+                        'confidence' => 'high',
+                        'refusal' => false,
+                    ], JSON_THROW_ON_ERROR);
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month'])
+            ->assertJsonPath('result.status', 'answered');
+        $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?'])
+            ->assertJsonPath('result.message', 'There are 7 units in current stock.');
+
+        $this->assertCount(2, $prompts);
+        $this->assertStringContainsString('"total_units": 7', $prompts[1]);
+        $this->assertStringNotContainsString('Monthly sales totaled', $prompts[1]);
+        $this->assertStringNotContainsString('What about inventory?', $prompts[1]);
+        $this->assertStringNotContainsString('transaction_count', $prompts[1]);
+    }
+
+    public function test_returning_to_the_assistant_resets_visit_context(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return ['status' => 'answered', 'message' => 'Synthetic answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->get(route('assistant.index'))->assertViewMissing('result');
+        $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $this->assertSame([null, null], $receivedContexts);
+    }
+
+    public function test_visit_context_expires_when_the_owner_is_inactive(): void
+    {
+        $this->travelTo(now()->startOfMinute());
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return ['status' => 'answered', 'message' => 'Synthetic answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->travel(21)->minutes();
+        $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $this->assertSame([null, null], $receivedContexts);
+    }
+
+    public function test_logging_out_does_not_restore_a_previous_visit_context(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return ['status' => 'answered', 'message' => 'Synthetic answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $this->assertSame([null, null], $receivedContexts);
+    }
+
+    public function test_visit_context_is_not_shared_with_a_different_owner_in_the_same_browser_session(): void
+    {
+        $firstOwner = $this->createUser('store_owner');
+        $secondOwner = User::query()->create([
+            'name' => 'Synthetic Other Owner',
+            'email' => 'other-owner@example.test',
+            'password' => 'synthetic-password',
+            'phone' => '0000000000',
+            'address' => 'Synthetic address',
+            'role' => 'store_owner',
+            'profile_image' => '',
+            'status' => 'active',
+        ]);
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return ['status' => 'answered', 'message' => 'Synthetic answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($firstOwner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->actingAs($secondOwner)->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $this->assertSame([null, null], $receivedContexts);
+    }
+
+    public function test_unanswered_questions_do_not_retain_visit_context(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->times(3)->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return $question === 'What about the most recent one?'
+                    ? ['status' => 'declined', 'message' => 'That reference is ambiguous.']
+                    : ['status' => 'answered', 'message' => 'Synthetic answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->postJson(route('assistant.ask'), ['question' => 'What about the most recent one?'])->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?']);
+
+        $this->assertSame([null, ['owner_id' => $owner->id, 'intent' => 'sales_summary'], null], $receivedContexts);
+    }
+
+    public function test_cashier_cannot_submit_a_conversational_json_request(): void
+    {
+        $cashier = $this->createUser('cashier');
+
+        $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'What about inventory?'])->assertForbidden();
+    }
+
+    public function test_invalid_conversational_json_question_is_rejected(): void
+    {
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => str_repeat('a', 501)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('question');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function syntheticConversationContext(int $totalUnits): array
+    {
+        return [
+            'sales' => [
+                'period' => 'monthly',
+                'date' => '2026-11-07',
+                'summary' => ['transaction_count' => 4, 'total_sales' => 125.0, 'average_sale' => 31.25],
+            ],
+            'inventory' => ['stats' => ['product_count' => 1, 'total_units' => $totalUnits, 'stock_value' => 30.0]],
+            'as_of' => ['sales' => '2026-11-07', 'inventory' => '2026-11-07'],
+            'scopes' => ['sales' => 'All recorded sales transactions, including paid, unpaid, and partially paid.'],
+        ];
     }
 
     private function createUser(string $role): User
