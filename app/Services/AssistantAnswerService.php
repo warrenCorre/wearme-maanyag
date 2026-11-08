@@ -16,16 +16,17 @@ class AssistantAnswerService
         private AssistantPromptBuilder $promptBuilder,
         private GeminiClient $geminiClient,
         private AssistantResponseValidator $responseValidator,
+        private AssistantConversationService $conversationService,
     ) {}
 
     /**
      * @return array{
-     *     status: 'declined'|'disabled'|'answered'|'social'|'refused'|'invalid'|'unavailable',
+     *     status: 'declined'|'disabled'|'answered'|'social'|'clarification'|'refused'|'invalid'|'unavailable',
      *     message: string,
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
-     *     visit_context?: array{intent: string}
+     *     visit_context?: array{intent?: string, pending?: string}
      * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
@@ -42,7 +43,7 @@ class AssistantAnswerService
         if ($decision['intent'] === 'local_social') {
             return [
                 'status' => 'social',
-                'message' => match ($decision['social_reply']) {
+                'message' => $this->conversationService->reply('social', $decision['social_reply']) ?? match ($decision['social_reply']) {
                     'hi' => 'Hi! I am Maanyag. Happy to chat briefly or help with a supported store question.',
                     'hello' => 'Hello! Nice to hear from you. Want to chat briefly or ask a supported store question?',
                     'hey' => 'Hey! I am here for a quick chat or a supported store question.',
@@ -56,6 +57,20 @@ class AssistantAnswerService
                     'joke' => 'A little store-themed joke: Why did the hanger stay calm? It knew how to hang in there.',
                     default => 'Hi! I am Maanyag. How can I help with the store today?',
                 },
+            ];
+        }
+
+        if ($decision['intent'] === 'clarification') {
+            $topic = $decision['clarification'];
+
+            return [
+                'status' => 'clarification',
+                'message' => $this->conversationService->reply('clarification', $topic) ?? match ($topic) {
+                    'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
+                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, this month, or this year?',
+                    'unpaid_goal' => 'Do you mean the aggregate unpaid balance or one pending sale? I can help with the aggregate; individual-sale details are not available yet.',
+                },
+                'visit_context' => ['pending' => $topic],
             ];
         }
 

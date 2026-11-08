@@ -56,7 +56,7 @@
                 <div class="rounded-2xl border-2 border-slate-900 bg-slate-50 p-5">
                     <p class="text-xs font-black uppercase tracking-[0.18em] text-rose-500">Store summaries paused</p>
                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-700">
-                        Store-data sharing with Gemini is disabled until the Owner approves the account and data-handling arrangement. Greetings and brief chat still work locally.
+                        Store-data sharing with Gemini is disabled until the Owner approves the account and data-handling arrangement. Greetings and brief chat still work with a local fallback; conversation sharing has a separate approval setting.
                     </p>
                 </div>
             @endif
@@ -81,12 +81,14 @@
                         $resultClasses = match ($result['status']) {
                             'answered' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'social' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
+                            'clarification' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'declined', 'refused' => 'border-amber-700 bg-amber-50 text-amber-950',
                             default => 'border-slate-400 bg-slate-50 text-slate-800',
                         };
                         $resultLabel = match ($result['status']) {
                             'answered' => 'Answer',
                             'social' => 'Chat',
+                            'clarification' => 'Quick question',
                             'declined' => 'Not supported',
                             'refused' => 'Not enough information',
                             'disabled' => 'Store summaries paused',
@@ -118,7 +120,7 @@
                     <div id="assistant-welcome" class="flex flex-1 flex-col items-center justify-center text-center">
                         <span class="flex h-16 w-16 items-center justify-center rounded-3xl border-2 border-slate-900 bg-rose-100 text-3xl text-rose-600 shadow-[4px_4px_0_0_#0f172a]" aria-hidden="true">◌</span>
                         <h3 class="mt-6 text-2xl font-black tracking-tight text-slate-900">Hi! How can I help you today?</h3>
-                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Say hi, chat briefly, or ask about sales, inventory, best sellers, collection dates, or aggregate unpaid balances.</p>
+                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Say hi, or ask about sales, inventory, best sellers, collection dates, or unpaid balances. I can clarify what you need.</p>
                         <div class="mt-6 flex flex-wrap justify-center gap-2">
                             @foreach ($starterPrompts as $starterPrompt)
                                 <form method="POST" action="{{ route('assistant.ask') }}" data-assistant-question-form>
@@ -166,7 +168,7 @@
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
                     </button>
                 </div>
-                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Brief chat is local; store facts still use supported skills. Individual-sale questions are not yet available.</p>
+                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Brief chat is local unless separate conversation sharing is enabled; store facts use verified skills. Individual-sale details are not yet available.</p>
             </form>
         </section>
     </div>
@@ -198,6 +200,7 @@
             const statuses = {
                 answered: ['Answer', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 social: ['Chat', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
+                clarification: ['Quick question', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 declined: ['Not supported', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],
                 refused: ['Not enough information', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],
                 disabled: ['Store summaries paused', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],

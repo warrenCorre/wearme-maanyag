@@ -40,6 +40,7 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
         'embedding_model' => env('GEMINI_EMBEDDING_MODEL', 'gemini-embedding-001'),
         'allow_store_data' => env('GEMINI_ALLOW_STORE_DATA', false),
+        'allow_conversation' => env('GEMINI_ALLOW_CONVERSATION', false),
     ],
 
 ];

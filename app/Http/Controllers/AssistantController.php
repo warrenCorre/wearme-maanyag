@@ -32,10 +32,17 @@ class AssistantController extends Controller
 
         $request->session()->cache()->forget('assistant.visit_context');
 
-        if ($result['status'] === 'answered' && isset($result['visit_context'])) {
+        if ($result['status'] === 'answered' && isset($result['visit_context']['intent'])) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'intent' => $result['visit_context']['intent'],
+            ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'clarification' && in_array($result['visit_context']['pending'] ?? null, [
+            'sales_goal', 'sales_period', 'unpaid_goal',
+        ], true)) {
+            $request->session()->cache()->put('assistant.visit_context', [
+                'owner_id' => $request->user()->id,
+                'pending' => $result['visit_context']['pending'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['intent'] ?? null, [
             'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
@@ -43,6 +50,13 @@ class AssistantController extends Controller
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'intent' => $trustedVisitContext['intent'],
+            ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['pending'] ?? null, [
+            'sales_goal', 'sales_period', 'unpaid_goal',
+        ], true)) {
+            $request->session()->cache()->put('assistant.visit_context', [
+                'owner_id' => $request->user()->id,
+                'pending' => $trustedVisitContext['pending'],
             ], now()->addMinutes(20));
         }
 
