@@ -20,6 +20,7 @@ class AssistantControllerTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
+        config(['services.gemini.allow_conversation' => false]);
     }
 
     public function test_guest_is_redirected_to_login(): void
@@ -45,6 +46,7 @@ class AssistantControllerTest extends TestCase
 
     public function test_owner_sees_the_read_only_assistant_form(): void
     {
+        config(['services.gemini.allow_store_data' => false]);
         $owner = $this->createUser('store_owner');
 
         $response = $this->actingAs($owner)->get(route('assistant.index'));
@@ -57,6 +59,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Maximum 500 characters');
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
         $response->assertSee('Follow up during this visit');
+        $response->assertSee('Greetings and brief chat still work with a local fallback');
         $response->assertSee('List recently collected products.');
         $response->assertSee('value="List recently collected products"', false);
         $response->assertSee('Check Inventory');
@@ -149,6 +152,200 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('What is the weather today?');
         $response->assertSee('Not supported');
         $response->assertViewHas('result', fn (array $result): bool => empty($result['sources']));
+    }
+
+    public function test_owner_receives_a_local_greeting_in_html_and_json_without_gemini(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->post(route('assistant.ask'), ['question' => 'Hi!'])
+            ->assertSee('Maanyag · Chat')
+            ->assertSee('Hi! I am Maanyag.');
+        $this->postJson(route('assistant.ask'), ['question' => 'Good evening'])
+            ->assertExactJson(['result' => [
+                'status' => 'social',
+                'message' => 'Good evening! I am here for a quick chat or a supported store question.',
+            ]]);
+    }
+
+    public function test_cashier_cannot_submit_a_social_question(): void
+    {
+        $cashier = $this->createUser('cashier');
+
+        $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'Hi!'])->assertForbidden();
+    }
+
+    public function test_local_chat_preserves_only_the_last_verified_skill_for_follow_ups(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $receivedContexts = [];
+
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock) use (&$receivedContexts): void {
+            $mock->shouldReceive('answer')->times(3)->andReturnUsing(function (string $question, mixed $date, ?array $context) use (&$receivedContexts): array {
+                $receivedContexts[] = $context;
+
+                return $question === 'Hi!'
+                    ? ['status' => 'social', 'message' => 'Hi! I am Maanyag.']
+                    : ['status' => 'answered', 'message' => 'Synthetic verified answer.', 'visit_context' => ['intent' => 'sales_summary']];
+            });
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month']);
+        $this->postJson(route('assistant.ask'), ['question' => 'Hi!'])
+            ->assertExactJson(['result' => ['status' => 'social', 'message' => 'Hi! I am Maanyag.']]);
+        $this->postJson(route('assistant.ask'), ['question' => 'What about yesterday?']);
+
+        $this->assertSame([
+            null,
+            ['owner_id' => $owner->id, 'intent' => 'sales_summary'],
+            ['owner_id' => $owner->id, 'intent' => 'sales_summary'],
+        ], $receivedContexts);
+    }
+
+    public function test_social_chat_does_not_create_follow_up_context_without_a_verified_answer(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Hi!'])
+            ->assertJsonPath('result.status', 'social');
+        $this->postJson(route('assistant.ask'), ['question' => 'What about yesterday?'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_owner_can_clarify_sales_locally_without_saving_the_chat_or_querying_store_data(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $first = $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?']);
+        $second = $this->postJson(route('assistant.ask'), ['question' => 'Transaction counts']);
+        $third = $this->postJson(route('assistant.ask'), ['question' => 'Yesterday']);
+
+        $first->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+        $second->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+        $third->assertJsonPath('result.status', 'disabled');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_unpaid_clarification_declines_an_unimplemented_sale_detail_without_a_provider_call(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Unpaid?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'The latest one'])
+            ->assertJsonPath('result.status', 'declined')
+            ->assertJsonPath('result.message', 'Individual-sale details are not available yet. I can help with the aggregate unpaid balance.');
+        $this->postJson(route('assistant.ask'), ['question' => 'Aggregate'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_new_chat_and_expiry_clear_only_the_pending_choice(): void
+    {
+        $this->travelTo(now()->startOfMinute());
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->get(route('assistant.index'))->assertViewMissing('result');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->travel(21)->minutes();
+        $this->postJson(route('assistant.ask'), ['question' => 'Totals'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_local_chat_preserves_a_pending_choice_without_saving_social_text(): void
+    {
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Hi!'])
+            ->assertExactJson(['result' => [
+                'status' => 'social',
+                'message' => 'Hi! I am Maanyag. Happy to chat briefly or help with a supported store question.',
+            ]]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Totals'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+    }
+
+    public function test_a_pending_choice_cannot_survive_logout_or_cross_to_another_owner(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $other = User::query()->create([
+            'name' => 'Synthetic Other Owner',
+            'email' => 'synthetic-other-owner@example.test',
+            'password' => 'synthetic-password',
+            'phone' => '0000000000',
+            'address' => 'Synthetic address',
+            'role' => 'store_owner',
+            'profile_image' => '',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->actingAs($other)->postJson(route('assistant.ask'), ['question' => 'Totals'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($other)->postJson(route('assistant.ask'), ['question' => 'Totals'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_an_unsafe_turn_clears_pending_clarification(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->andReturn('{"style":"warm","suggested_skill":"none"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Unpaid?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Unpaid for Customer Ana?'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Aggregate'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_cashier_cannot_trigger_provider_conversation_even_with_the_conversation_gate_on(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $cashier = $this->createUser('cashier');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'Sales?'])->assertForbidden();
     }
 
     public function test_question_is_required(): void

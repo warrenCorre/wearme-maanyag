@@ -2,7 +2,7 @@
 
 @section('title', 'Maanyag Assistant - Wear Me Maanyag')
 @section('page_title', 'Maanyag Assistant')
-@section('page_description', 'Ask read-only questions about verified store records. The assistant cannot change records.')
+@section('page_description', 'Ask read-only store questions or say hi. The assistant cannot change records.')
 
 @section('content')
     @php
@@ -54,9 +54,9 @@
 
             @if (! config('services.gemini.allow_store_data', false))
                 <div class="rounded-2xl border-2 border-slate-900 bg-slate-50 p-5">
-                    <p class="text-xs font-black uppercase tracking-[0.18em] text-rose-500">Live answers paused</p>
+                    <p class="text-xs font-black uppercase tracking-[0.18em] text-rose-500">Store summaries paused</p>
                     <p class="mt-2 text-sm font-medium leading-relaxed text-slate-700">
-                        Store-data sharing with Gemini is disabled until the Owner approves the account and data-handling arrangement.
+                        Store-data sharing with Gemini is disabled until the Owner approves the account and data-handling arrangement. Greetings and brief chat still work with a local fallback; conversation sharing has a separate approval setting.
                     </p>
                 </div>
             @endif
@@ -69,7 +69,7 @@
                     <div>
                         <p class="text-xs font-black uppercase tracking-[0.18em] text-rose-500">Owner assistant · Read-only</p>
                         <h2 class="mt-1 text-lg font-black leading-tight text-slate-900 sm:text-xl">Your smart assistant, Maanyag!</h2>
-                        <p class="mt-1 text-xs font-medium text-slate-600">Grounded answers to supported store questions.</p>
+                        <p class="mt-1 text-xs font-medium text-slate-600">Say hi or ask a supported store question grounded in verified records.</p>
                     </div>
                 </div>
                 <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 xl:hidden" href="{{ route('assistant.index') }}">New Chat</a>
@@ -80,14 +80,18 @@
                     @php
                         $resultClasses = match ($result['status']) {
                             'answered' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
+                            'social' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
+                            'clarification' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'declined', 'refused' => 'border-amber-700 bg-amber-50 text-amber-950',
                             default => 'border-slate-400 bg-slate-50 text-slate-800',
                         };
                         $resultLabel = match ($result['status']) {
                             'answered' => 'Answer',
+                            'social' => 'Chat',
+                            'clarification' => 'Quick question',
                             'declined' => 'Not supported',
                             'refused' => 'Not enough information',
-                            'disabled' => 'Live answers paused',
+                            'disabled' => 'Store summaries paused',
                             'invalid' => 'Could not verify',
                             default => 'Temporarily unavailable',
                         };
@@ -116,7 +120,7 @@
                     <div id="assistant-welcome" class="flex flex-1 flex-col items-center justify-center text-center">
                         <span class="flex h-16 w-16 items-center justify-center rounded-3xl border-2 border-slate-900 bg-rose-100 text-3xl text-rose-600 shadow-[4px_4px_0_0_#0f172a]" aria-hidden="true">◌</span>
                         <h3 class="mt-6 text-2xl font-black tracking-tight text-slate-900">Hi! How can I help you today?</h3>
-                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Ask about sales, inventory, best sellers, collection dates, or aggregate unpaid balances.</p>
+                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Say hi, or ask about sales, inventory, best sellers, collection dates, or unpaid balances. I can clarify what you need.</p>
                         <div class="mt-6 flex flex-wrap justify-center gap-2">
                             @foreach ($starterPrompts as $starterPrompt)
                                 <form method="POST" action="{{ route('assistant.ask') }}" data-assistant-question-form>
@@ -158,13 +162,13 @@
                         rows="2"
                         maxlength="500"
                         required
-                        placeholder="Ask a supported store question..."
+                        placeholder="Say hi or ask a supported store question..."
                     >{{ old('question') }}</textarea>
                     <button class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500" type="submit" aria-label="Send question">
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
                     </button>
                 </div>
-                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Ask follow-ups about supported store topics; individual-sale questions are not yet available.</p>
+                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Brief chat is local unless separate conversation sharing is enabled; store facts use verified skills. Individual-sale details are not yet available.</p>
             </form>
         </section>
     </div>
@@ -195,9 +199,11 @@
             const exchange = assistantTemplate.content.cloneNode(true);
             const statuses = {
                 answered: ['Answer', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
+                social: ['Chat', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
+                clarification: ['Quick question', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 declined: ['Not supported', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],
                 refused: ['Not enough information', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],
-                disabled: ['Live answers paused', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
+                disabled: ['Store summaries paused', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
                 invalid: ['Could not verify', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
                 unavailable: ['Temporarily unavailable', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
             };
