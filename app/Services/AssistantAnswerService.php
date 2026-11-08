@@ -20,7 +20,7 @@ class AssistantAnswerService
 
     /**
      * @return array{
-     *     status: 'declined'|'disabled'|'answered'|'refused'|'invalid'|'unavailable',
+     *     status: 'declined'|'disabled'|'answered'|'social'|'refused'|'invalid'|'unavailable',
      *     message: string,
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
@@ -36,6 +36,26 @@ class AssistantAnswerService
             return [
                 'status' => 'declined',
                 'message' => $decision['reason'] ?? 'That question is not supported.',
+            ];
+        }
+
+        if ($decision['intent'] === 'local_social') {
+            return [
+                'status' => 'social',
+                'message' => match ($decision['social_reply']) {
+                    'hi' => 'Hi! I am Maanyag. Happy to chat briefly or help with a supported store question.',
+                    'hello' => 'Hello! Nice to hear from you. Want to chat briefly or ask a supported store question?',
+                    'hey' => 'Hey! I am here for a quick chat or a supported store question.',
+                    'morning' => 'Good morning! I am here for a quick chat or a supported store question.',
+                    'afternoon' => 'Good afternoon! I am here for a quick chat or a supported store question.',
+                    'evening' => 'Good evening! I am here for a quick chat or a supported store question.',
+                    'thanks' => 'You are welcome! I am here if you would like to ask a supported store question.',
+                    'check_in' => 'Thanks for checking in! I am here and ready to help with supported store questions.',
+                    'help' => 'I am Maanyag. I can chat briefly and help with supported store questions using verified records. I cannot change records or answer unrelated factual questions.',
+                    'goodbye' => 'Take care! Come back whenever you have a supported store question.',
+                    'joke' => 'A little store-themed joke: Why did the hanger stay calm? It knew how to hang in there.',
+                    default => 'Hi! I am Maanyag. How can I help with the store today?',
+                },
             ];
         }
 

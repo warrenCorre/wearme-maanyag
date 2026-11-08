@@ -22,10 +22,12 @@ class AssistantController extends Controller
         /** @var array{question: string} $validated */
         $validated = $request->validated();
         $visitContext = $request->session()->cache()->get('assistant.visit_context');
+        $trustedVisitContext = is_array($visitContext) && ($visitContext['owner_id'] ?? null) === $request->user()->id
+            ? $visitContext : null;
         $result = $answerService->answer(
             $validated['question'],
             null,
-            is_array($visitContext) && ($visitContext['owner_id'] ?? null) === $request->user()->id ? $visitContext : null,
+            $trustedVisitContext,
         );
 
         $request->session()->cache()->forget('assistant.visit_context');
@@ -34,6 +36,13 @@ class AssistantController extends Controller
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'intent' => $result['visit_context']['intent'],
+            ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['intent'] ?? null, [
+            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
+        ], true)) {
+            $request->session()->cache()->put('assistant.visit_context', [
+                'owner_id' => $request->user()->id,
+                'intent' => $trustedVisitContext['intent'],
             ], now()->addMinutes(20));
         }
 

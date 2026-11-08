@@ -236,6 +236,88 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame('disabled', $result['status']);
     }
 
+    public function test_local_social_replies_need_no_store_context_or_gemini_with_sharing_off_or_on(): void
+    {
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldNotReceive('generateText');
+
+        $service = $this->makeAnswerService($contextService, $geminiClient);
+
+        foreach ([false, true] as $sharingEnabled) {
+            config(['services.gemini.allow_store_data' => $sharingEnabled]);
+
+            foreach ([
+                'Hi!' => 'Hi! I am Maanyag.',
+                'Hello Maanyag' => 'Hello! Nice to hear from you.',
+                'Hey there' => 'Hey! I am here',
+                'Good evening Maanyag' => 'Good evening!',
+                'Thank you!' => 'You are welcome!',
+                'How are you?' => 'Thanks for checking in!',
+                'Tell me a joke' => 'A little store-themed joke:',
+            ] as $question => $expectedOpening) {
+                $result = $service->answer($question, CarbonImmutable::parse('2026-11-07'));
+
+                $this->assertSame('social', $result['status'], $question);
+                $this->assertStringStartsWith($expectedOpening, $result['message'], $question);
+                $this->assertArrayNotHasKey('sources', $result, $question);
+                $this->assertArrayNotHasKey('visit_context', $result, $question);
+            }
+        }
+    }
+
+    public function test_mixed_greeting_with_a_store_question_remains_behind_the_sharing_gate(): void
+    {
+        config(['services.gemini.allow_store_data' => false]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'Hi, show me sales for this month?',
+            CarbonImmutable::parse('2026-11-07'),
+        );
+
+        $this->assertSame('disabled', $result['status']);
+    }
+
+    public function test_mixed_greeting_never_enters_a_mocked_provider_prompt_when_sharing_is_enabled(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+
+        $capturedPrompt = '';
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')
+            ->once()
+            ->withArgs(function (string $prompt) use (&$capturedPrompt): bool {
+                $capturedPrompt = $prompt;
+
+                return true;
+            })
+            ->andReturn($this->structuredResponse(
+                'Monthly sales totaled PHP 125.00 across 4 transactions.',
+                'calculation',
+                [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+            'Hi Maanyag, show me sales for this month?',
+            CarbonImmutable::parse('2026-11-01'),
+        );
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertStringContainsString('Summarize monthly sales', $capturedPrompt);
+        $this->assertStringNotContainsString('Hi Maanyag', $capturedPrompt);
+    }
+
     public function test_it_sends_only_collection_dates_and_their_scope_to_the_mocked_client(): void
     {
         config(['services.gemini.allow_store_data' => true]);
