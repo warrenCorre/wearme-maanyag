@@ -218,7 +218,6 @@ class AssistantQuestionPolicy
             preg_match('/^(?:how are you|how are you doing|hows it going|how is it going|hows your day|whats up|what are you up to)(?:,? maanyag)?$/', $question) === 1 => 'check_in',
             preg_match('/^(?:what can you do|how can you help|who are you|can we chat|can you chat with me)(?:,? maanyag)?$/', $question) === 1 => 'help',
             preg_match('/^(?:bye|goodbye|see you|see you later)(?:,? maanyag)?$/', $question) === 1 => 'goodbye',
-            preg_match('/^(?:tell me a joke|can you tell me a joke|say something funny)$/', $question) === 1 => 'joke',
             default => null,
         };
     }

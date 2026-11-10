@@ -55,12 +55,12 @@ class AssistantSafeChatService
             return $fallback;
         }
 
-        $reply = trim($response['reply']);
+        $reply = str_replace('’', "'", trim($response['reply']));
 
         if ($reply === '' || strlen($reply) > 240
             || preg_match('/\A[A-Za-z][A-Za-z .,!?\x27-]*\z/D', $reply) !== 1
-            || preg_match('/\b(?:maanyag|store|sales?|products?|customers?|clients?|buyers?|inventory|stock|payments?|balances?|transactions?|records?|revenue|profits?|paid|unpaid|orders?|prices?|amounts?|quantities|reports?|accounts?|database|verified|today|yesterday|tomorrow|zero|one|two|three|four|five|six|seven|eight|nine|ten|password|secret|token|key|address|email|phone|contact)\b/i', $reply) === 1
-            || preg_match('/\b(?:we have|we sell|our shop|our clothes|our collection|i checked|i can see|i looked|i found|i know|you bought|you have|you purchased|available now)\b/i', $reply) === 1) {
+            || preg_match('/\b(?:maanyag|store|shop|boutique|business|merchandise|sales?|products?|customers?|clients?|buyers?|inventory|stock|payments?|balances?|transactions?|records?|revenue|profits?|paid|unpaid|orders?|prices?|amounts?|quantities|reports?|accounts?|database|verified|available|today|yesterday|tomorrow|zero|one|two|three|four|five|six|seven|eight|nine|ten|password|secret|token|key|address|email|phone|contact)\b/i', $reply) === 1
+            || preg_match('/\b(?:we|our|i checked|i can see|i looked|i found|i know|you bought|you have|you purchased)\b/i', $reply) === 1) {
             return $fallback;
         }
 
