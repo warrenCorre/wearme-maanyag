@@ -57,8 +57,12 @@ class AssistantQuestionPolicy
             }
 
             if (in_array($normalizedQuestion, ['one', 'a sale', 'one sale', 'particular', 'particular sale', 'a particular sale', 'latest', 'latest sale', 'the latest one', 'recent sale', 'specific sale', 'sale details'], true)) {
-                return $this->denied($date, 'Individual-sale details are not available yet. I can help with the aggregate unpaid balance.');
+                return $this->localLatestUnpaidSale($date);
             }
+        }
+
+        if (preg_match('/^(?:(?:show(?: me)?|what is|what about) )?(?:the )?(?:latest|most recent) (?:unpaid|pending) (?:sale|transaction)$/', $normalizedQuestion) === 1) {
+            return $this->localLatestUnpaidSale($date);
         }
 
         if (preg_match('/^(?:(?:what|how) about |(?:and|also) )?sales$/', $normalizedQuestion) === 1) {
@@ -250,6 +254,21 @@ class AssistantQuestionPolicy
             'date' => $date->toDateString(),
             'safe_question' => null,
             'clarification' => $topic,
+            'reason' => null,
+        ];
+    }
+
+    /**
+     * @return array{allowed: true, intent: 'latest_unpaid_sale', period: null, date: string, safe_question: null, reason: null}
+     */
+    private function localLatestUnpaidSale(CarbonImmutable $date): array
+    {
+        return [
+            'allowed' => true,
+            'intent' => 'latest_unpaid_sale',
+            'period' => null,
+            'date' => $date->toDateString(),
+            'safe_question' => null,
             'reason' => null,
         ];
     }

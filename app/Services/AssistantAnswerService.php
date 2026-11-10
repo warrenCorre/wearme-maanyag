@@ -17,6 +17,7 @@ class AssistantAnswerService
         private GeminiClient $geminiClient,
         private AssistantResponseValidator $responseValidator,
         private AssistantConversationService $conversationService,
+        private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
     ) {}
 
     /**
@@ -68,9 +69,16 @@ class AssistantAnswerService
                 'message' => $this->conversationService->reply('clarification', $topic) ?? match ($topic) {
                     'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
                     'sales_period' => 'Which period for sales totals: today, yesterday, this week, this month, or this year?',
-                    'unpaid_goal' => 'Do you mean the aggregate unpaid balance or one pending sale? I can help with the aggregate; individual-sale details are not available yet.',
+                    'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
                 },
                 'visit_context' => ['pending' => $topic],
+            ];
+        }
+
+        if ($decision['intent'] === 'latest_unpaid_sale') {
+            return [
+                'status' => 'answered',
+                'message' => $this->latestUnpaidSaleService->answer(),
             ];
         }
 

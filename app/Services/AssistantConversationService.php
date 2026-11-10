@@ -76,9 +76,9 @@ class AssistantConversationService
                     'gentle' => 'Which period would you like for sales totals: today, yesterday, this week, this month, or this year?',
                 ],
                 'unpaid_goal' => [
-                    'warm' => 'Do you mean the aggregate unpaid balance or one pending sale? I can help with the aggregate; individual-sale details are not available yet.',
-                    'bright' => 'Let’s clarify: the aggregate unpaid balance or a particular pending sale? Only the aggregate is available right now.',
-                    'gentle' => 'Are you asking about the aggregate unpaid balance or a particular sale? Individual-sale details are not available yet.',
+                    'warm' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
+                    'bright' => 'Let’s clarify: would you like the aggregate unpaid balance or the latest pending sale?',
+                    'gentle' => 'Are you asking about the aggregate unpaid balance or the latest pending sale? Both are available.',
                 ],
                 default => null,
             };

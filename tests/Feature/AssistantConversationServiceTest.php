@@ -44,7 +44,7 @@ class AssistantConversationServiceTest extends TestCase
 
         $reply = (new AssistantConversationService($client))->reply('clarification', 'unpaid_goal');
 
-        $this->assertSame('Let’s clarify: the aggregate unpaid balance or a particular pending sale? Only the aggregate is available right now.', $reply);
+        $this->assertSame('Let’s clarify: would you like the aggregate unpaid balance or the latest pending sale?', $reply);
     }
 
     public function test_unknown_topics_never_call_the_provider(): void
