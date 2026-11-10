@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
+use App\Services\AssistantLatestUnpaidSaleService;
 use App\Services\AssistantPromptBuilder;
 use App\Services\AssistantQuestionPolicy;
 use App\Services\AssistantResponseValidator;
@@ -286,6 +287,24 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertArrayNotHasKey('sources', $result);
     }
 
+    public function test_latest_unpaid_sale_is_local_even_if_both_gemini_sharing_gates_are_on(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $latestSale = Mockery::mock(AssistantLatestUnpaidSaleService::class);
+        $latestSale->shouldReceive('answer')->once()->andReturn('Latest unpaid sale: SYN-LOCAL for Synthetic Buyer.');
+
+        $result = $this->makeAnswerService($contextService, $client, $latestSale)->answer('Show the latest unpaid sale');
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Latest unpaid sale: SYN-LOCAL for Synthetic Buyer.', $result['message']);
+        $this->assertArrayNotHasKey('visit_context', $result);
+        $this->assertArrayNotHasKey('sources', $result);
+    }
+
     public function test_separately_enabled_conversation_can_choose_a_safe_reply_without_store_queries(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
@@ -313,7 +332,7 @@ class AssistantAnswerServiceTest extends TestCase
         $result = $this->makeAnswerService($contextService, $client)->answer('Unpaid?', CarbonImmutable::parse('2026-11-07'));
 
         $this->assertSame('clarification', $result['status']);
-        $this->assertStringContainsString('not available yet', $result['message']);
+        $this->assertStringContainsString('latest pending sale', $result['message']);
         $this->assertSame(['pending' => 'unpaid_goal'], $result['visit_context']);
     }
 
@@ -617,6 +636,7 @@ class AssistantAnswerServiceTest extends TestCase
     private function makeAnswerService(
         AssistantContextService $contextService,
         GeminiClient $geminiClient,
+        ?AssistantLatestUnpaidSaleService $latestSaleService = null,
     ): AssistantAnswerService {
         return new AssistantAnswerService(
             new AssistantQuestionPolicy,
@@ -625,6 +645,7 @@ class AssistantAnswerServiceTest extends TestCase
             $geminiClient,
             new AssistantResponseValidator,
             new AssistantConversationService($geminiClient),
+            $latestSaleService ?? new AssistantLatestUnpaidSaleService,
         );
     }
 }

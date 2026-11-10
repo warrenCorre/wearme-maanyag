@@ -13,6 +13,7 @@
             ['label' => 'List best-selling products.', 'question' => 'List best-selling products'],
             ['label' => 'List recently collected products.', 'question' => 'List recently collected products'],
             ['label' => 'How many unpaid transactions?', 'question' => 'How many unpaid transactions?'],
+            ['label' => 'Show the latest unpaid sale.', 'question' => 'Show the latest unpaid sale'],
         ];
         $starterPrompts = [
             ['label' => 'Check Inventory', 'question' => 'Summarize inventory status'],
@@ -168,7 +169,7 @@
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
                     </button>
                 </div>
-                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Brief chat is local unless separate conversation sharing is enabled; store facts use verified skills. Individual-sale details are not yet available.</p>
+                <p class="mt-2 text-xs font-medium text-slate-500">Enter to send · Shift+Enter for a new line. Maximum 500 characters. Brief chat is local unless separate conversation sharing is enabled; store facts use verified skills. The latest unpaid sale is shown locally to the Owner.</p>
             </form>
         </section>
     </div>

@@ -208,13 +208,34 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('best_sellers', $policy->evaluate('Best sellers', $date, ['pending' => 'sales_goal'])['intent']);
     }
 
-    public function test_an_individual_unpaid_sale_choice_does_not_advertise_an_unimplemented_skill(): void
+    public function test_one_unpaid_sale_choice_routes_to_the_local_latest_sale_skill(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate('The latest one', CarbonImmutable::parse('2026-11-07'), ['pending' => 'unpaid_goal']);
 
-        $this->assertFalse($result['allowed']);
+        $this->assertTrue($result['allowed']);
+        $this->assertSame('latest_unpaid_sale', $result['intent']);
         $this->assertNull($result['safe_question']);
-        $this->assertStringContainsString('not available yet', $result['reason']);
+        $this->assertNull($result['reason']);
+    }
+
+    public function test_only_explicit_latest_unpaid_sale_phrases_can_select_a_local_customer_detail(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+
+        foreach (['Show the latest unpaid sale', 'Most recent pending transaction', 'What about the latest unpaid sale?', 'Hi, show me the latest unpaid sale!'] as $question) {
+            $result = $policy->evaluate($question, CarbonImmutable::parse('2026-11-07'));
+
+            $this->assertTrue($result['allowed'], $question);
+            $this->assertSame('latest_unpaid_sale', $result['intent'], $question);
+            $this->assertNull($result['safe_question'], $question);
+        }
+
+        foreach (['Latest sales transactions', 'What about the most recent one?', 'Latest unpaid sale for Customer Ana', 'Who owes me?', 'Delete the latest unpaid sale'] as $question) {
+            $result = $policy->evaluate($question, CarbonImmutable::parse('2026-11-07'));
+
+            $this->assertFalse($result['allowed'], $question);
+            $this->assertNull($result['safe_question'], $question);
+        }
     }
 
     public function test_clarifications_do_not_bypass_customer_write_or_injection_limits(): void

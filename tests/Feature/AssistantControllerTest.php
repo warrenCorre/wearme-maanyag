@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SalesTransaction;
 use App\Models\User;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
@@ -61,6 +62,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Follow up during this visit');
         $response->assertSee('Greetings and brief chat still work with a local fallback');
         $response->assertSee('List recently collected products.');
+        $response->assertSee('Show the latest unpaid sale.');
         $response->assertSee('value="List recently collected products"', false);
         $response->assertSee('Check Inventory');
         $response->assertSee('Sales Insights');
@@ -245,7 +247,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'declined');
     }
 
-    public function test_unpaid_clarification_declines_an_unimplemented_sale_detail_without_a_provider_call(): void
+    public function test_unpaid_clarification_can_follow_into_a_local_sale_without_a_provider_call(): void
     {
         config(['services.gemini.allow_store_data' => false]);
         $owner = $this->createUser('store_owner');
@@ -256,10 +258,61 @@ class AssistantControllerTest extends TestCase
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Unpaid?'])
             ->assertJsonPath('result.status', 'clarification');
         $this->postJson(route('assistant.ask'), ['question' => 'The latest one'])
-            ->assertJsonPath('result.status', 'declined')
-            ->assertJsonPath('result.message', 'Individual-sale details are not available yet. I can help with the aggregate unpaid balance.');
+            ->assertExactJson(['result' => [
+                'status' => 'answered',
+                'message' => 'No pending unpaid sale with a positive balance was found.',
+            ]]);
         $this->postJson(route('assistant.ask'), ['question' => 'Aggregate'])
             ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_only_the_owner_sees_local_latest_sale_details_escaped_in_html_without_a_provider_call(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $sale = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-LOCAL',
+            'sale_type' => 'walk_in',
+            'online_platform' => '',
+            'customer_name' => '<script>alert("synthetic")</script>',
+            'customer_contact' => '0000000001',
+            'delivery_address' => 'Synthetic address',
+            'total_amount' => '35.00',
+            'payment_status' => 'partially_paid',
+            'recorded_by' => $owner->id,
+            'transaction_date' => '2026-11-07 10:00:00',
+        ]);
+        $sale->unpaidPayment()->create([
+            'amount_paid' => '10.00', 'balance' => '25.00', 'payment_date' => null,
+            'status' => 'pending', 'updated_by' => $owner->id,
+        ]);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $response = $this->actingAs($owner)->post(route('assistant.ask'), ['question' => 'Show the latest unpaid sale']);
+
+        $response->assertSee('SYN-LOCAL')
+            ->assertSee('₱25.00')
+            ->assertSee('&lt;script&gt;alert', false)
+            ->assertDontSee('<script>alert("synthetic")</script>', false);
+        $this->postJson(route('assistant.ask'), ['question' => 'The latest one'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_cashier_cannot_request_a_latest_sale_detail(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $cashier = $this->createUser('cashier');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'Show the latest unpaid sale'])
+            ->assertForbidden();
     }
 
     public function test_new_chat_and_expiry_clear_only_the_pending_choice(): void
