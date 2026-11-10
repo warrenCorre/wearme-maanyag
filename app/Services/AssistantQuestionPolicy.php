@@ -10,7 +10,7 @@ class AssistantQuestionPolicy
     public function __construct(private AssistantSafeTurnScreen $turnScreen) {}
 
     /**
-     * @return array{allowed: bool, intent: ?string, period: ?string, date: string, safe_question: ?string, social_reply?: string, clarification?: string, chat_turn?: string, reason: ?string}
+     * @return array{allowed: bool, intent: ?string, period: ?string, date: string, safe_question: ?string, social_reply?: string, clarification?: string, chat_turn?: string, model_candidate?: bool, reason: ?string}
      */
     public function evaluate(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
@@ -61,6 +61,11 @@ class AssistantQuestionPolicy
             if (in_array($normalizedQuestion, ['one', 'a sale', 'one sale', 'particular', 'particular sale', 'a particular sale', 'latest', 'latest sale', 'the latest one', 'recent sale', 'specific sale', 'sale details'], true)) {
                 return $this->localLatestUnpaidSale($date);
             }
+        }
+
+        if (($visitContext['chat_topic'] ?? null) === 'thrift'
+            && in_array($normalizedQuestion, ['joke', 'another joke'], true)) {
+            return $this->generalChat($date, 'tell me another joke about thrift shopping');
         }
 
         if (preg_match('/^(?:(?:show(?: me)?|what is|what about) )?(?:the )?(?:latest|most recent) (?:unpaid|pending) (?:sale|transaction)$/', $normalizedQuestion) === 1) {
@@ -187,18 +192,10 @@ class AssistantQuestionPolicy
         $chatTurn = $this->turnScreen->screen($question);
 
         if ($chatTurn !== null) {
-            return [
-                'allowed' => true,
-                'intent' => 'general_chat',
-                'period' => null,
-                'date' => $date->toDateString(),
-                'safe_question' => null,
-                'chat_turn' => $chatTurn,
-                'reason' => null,
-            ];
+            return $this->generalChat($date, $chatTurn);
         }
 
-        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.');
+        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.', true);
     }
 
     private function withoutSocialOpening(string $question): string
@@ -266,6 +263,20 @@ class AssistantQuestionPolicy
         ];
     }
 
+    /** @return array{allowed: true, intent: 'general_chat', period: null, date: string, safe_question: null, chat_turn: string, reason: null} */
+    private function generalChat(CarbonImmutable $date, string $turn): array
+    {
+        return [
+            'allowed' => true,
+            'intent' => 'general_chat',
+            'period' => null,
+            'date' => $date->toDateString(),
+            'safe_question' => null,
+            'chat_turn' => $turn,
+            'reason' => null,
+        ];
+    }
+
     /**
      * @return array{allowed: true, intent: 'clarification', period: null, date: string, safe_question: null, clarification: string, reason: null}
      */
@@ -298,9 +309,9 @@ class AssistantQuestionPolicy
     }
 
     /**
-     * @return array{allowed: false, intent: null, period: null, date: string, safe_question: null, reason: string}
+     * @return array{allowed: false, intent: null, period: null, date: string, safe_question: null, reason: string, model_candidate?: bool}
      */
-    private function denied(CarbonImmutable $date, string $reason): array
+    private function denied(CarbonImmutable $date, string $reason, bool $modelCandidate = false): array
     {
         return [
             'allowed' => false,
@@ -309,6 +320,7 @@ class AssistantQuestionPolicy
             'date' => $date->toDateString(),
             'safe_question' => null,
             'reason' => $reason,
+            ...($modelCandidate ? ['model_candidate' => true] : []),
         ];
     }
 }

@@ -28,9 +28,11 @@ class AssistantSafeChatService
     public function reply(string $safeTurn): string
     {
         $screenedTurn = $this->turnScreen->screen($safeTurn);
-        $fallback = str_contains($safeTurn, 'joke')
-            ? 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!'
-            : 'Giving clothes another chapter can be a lovely thought. I’m happy to keep this chat light!';
+        $fallback = match (true) {
+            str_contains($safeTurn, 'another joke') => 'Another thrift joke: Why did the scarf go exploring? It wanted a new twist!',
+            str_contains($safeTurn, 'joke') => 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!',
+            default => 'Giving clothes another chapter can be a lovely thought. I’m happy to keep this chat light!',
+        };
 
         if ($screenedTurn === null || ! config('services.gemini.allow_conversation', false)) {
             return $fallback;

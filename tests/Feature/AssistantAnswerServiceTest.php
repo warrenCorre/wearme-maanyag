@@ -6,11 +6,13 @@ use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
 use App\Services\AssistantLatestUnpaidSaleService;
+use App\Services\AssistantModelIntentService;
 use App\Services\AssistantPromptBuilder;
 use App\Services\AssistantQuestionPolicy;
 use App\Services\AssistantResponseValidator;
 use App\Services\AssistantSafeChatService;
 use App\Services\AssistantSafeTurnScreen;
+use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -20,7 +22,7 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
-    public function test_general_chat_does_not_read_store_data_or_create_visit_context_when_sharing_is_off(): void
+    public function test_general_chat_keeps_only_a_bounded_topic_and_does_not_read_store_data(): void
     {
         config(['services.gemini.allow_store_data' => true]);
         $contextService = Mockery::mock(AssistantContextService::class);
@@ -32,8 +34,55 @@ class AssistantAnswerServiceTest extends TestCase
 
         $this->assertSame('general_chat', $result['status']);
         $this->assertStringContainsString('thrift joke', $result['message']);
-        $this->assertArrayNotHasKey('visit_context', $result);
+        $this->assertSame(['chat_topic' => 'thrift'], $result['visit_context']);
         $this->assertArrayNotHasKey('sources', $result);
+    }
+
+    public function test_a_bounded_typo_uses_local_sales_clarification_even_when_conversation_is_disabled(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Wahat about transaction counts?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'sales_period'], $result['visit_context']);
+    }
+
+    public function test_a_screened_model_suggestion_is_rechecked_without_store_context_or_a_factual_answer(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: could we talk about how our sales are doing')
+            ->andReturn('{"intent":"sales_goal","period":"none"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'clarification / sales_goal'))
+            ->andReturn('{"style":"warm","suggested_skill":"none"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Could we talk about how our sales are doing?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'sales_goal'], $result['visit_context']);
+    }
+
+    public function test_unsupported_mixed_or_list_store_requests_do_not_reach_model_intent(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $service = $this->makeAnswerService($contextService, $client);
+
+        foreach (['Could we talk about sales and inventory?', 'List all sales', 'Latest sales transactions', 'List all inventory'] as $question) {
+            $this->assertSame('declined', $service->answer($question)['status'], $question);
+        }
     }
 
     protected function setUp(): void
@@ -665,6 +714,8 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantConversationService($geminiClient),
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
             new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
+            new AssistantStoreTurnScreen,
+            new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen),
         );
     }
 }
