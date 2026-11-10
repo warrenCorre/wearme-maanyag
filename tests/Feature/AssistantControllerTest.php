@@ -138,7 +138,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'declined');
     }
 
-    public function test_follow_up_chat_sends_only_a_safe_current_turn_not_the_previous_joke(): void
+    public function test_follow_up_chat_sends_screened_public_history_but_no_store_context(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
         $owner = $this->createUser('store_owner');
@@ -150,8 +150,14 @@ class AssistantControllerTest extends TestCase
                 ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me a joke about thrift shopping')
                 ->andReturn('{"kind":"general_chat","reply":"A jacket found a fresh chapter!"}');
             $mock->shouldReceive('generateText')->once()
-                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me another joke about thrift shopping')
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"turn":"tell me a joke about thrift shopping","reply":"A jacket found a fresh chapter!"')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: tell me another joke about thrift shopping'))
                 ->andReturn('{"kind":"general_chat","reply":"A scarf found a new twist!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"turn":"tell me a joke about thrift shopping","reply":"A jacket found a fresh chapter!"')
+                    && str_contains($prompt, '"turn":"tell me another joke about thrift shopping","reply":"A scarf found a new twist!"')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: what do you think about vintage fashion'))
+                ->andReturn('{"kind":"general_chat","reply":"Vintage outfits can have another chapter!"}');
         });
 
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
@@ -160,6 +166,149 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'general_chat')
             ->assertJsonPath('result.message', 'A scarf found a new twist!')
             ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'What do you think about vintage fashion?'])
+            ->assertJsonPath('result.message', 'Vintage outfits can have another chapter!');
+    }
+
+    public function test_new_chat_clears_public_chat_history_instead_of_replaying_old_turns(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->twice()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A cheerful thought!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->get(route('assistant.index'))->assertOk();
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A cheerful thought!');
+    }
+
+    public function test_public_chat_history_expires_after_inactivity_without_crossing_owners_or_logout(): void
+    {
+        $this->travelTo(now()->startOfMinute());
+        config(['services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $otherOwner = User::query()->create([
+            'name' => 'Synthetic Other Owner', 'email' => 'second-owner@example.test',
+            'password' => 'synthetic-password', 'phone' => '0000000000',
+            'address' => 'Synthetic address', 'role' => 'store_owner',
+            'profile_image' => '', 'status' => 'active',
+        ]);
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->times(5)
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A cheerful thought!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->actingAs($otherOwner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A cheerful thought!');
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A cheerful thought!');
+        $this->travel(21)->minutes();
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A cheerful thought!');
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A cheerful thought!');
+    }
+
+    public function test_private_sale_result_never_enters_public_history_even_when_the_owner_acknowledges_it(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $sale = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-PRIVATE-001',
+            'sale_type' => 'walk_in',
+            'online_platform' => '',
+            'customer_name' => 'Synthetic Buyer',
+            'customer_contact' => '0000000001',
+            'delivery_address' => 'Synthetic address',
+            'total_amount' => '35.00',
+            'payment_status' => 'partially_paid',
+            'recorded_by' => $owner->id,
+            'transaction_date' => '2026-11-07 10:00:00',
+        ]);
+        $sale->unpaidPayment()->create([
+            'amount_paid' => '10.00', 'balance' => '25.00', 'payment_date' => null,
+            'status' => 'pending', 'updated_by' => $owner->id,
+        ]);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A cheerful thought!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"turn":"joke","reply":"A cheerful thought!"')
+                    && str_contains($prompt, 'A store question about unpaid happened since that chat.')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: okay')
+                    && ! str_contains($prompt, 'SYN-PRIVATE-001')
+                    && ! str_contains($prompt, 'Synthetic Buyer')
+                    && ! str_contains($prompt, '0000000001')
+                    && ! str_contains($prompt, '25.00'))
+                ->andReturn('{"kind":"general_chat","reply":"Got it! Happy to chat more."}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Show the latest unpaid sale'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Okay'])
+            ->assertExactJson(['result' => ['status' => 'general_chat', 'message' => 'Got it! Happy to chat more.']]);
+    }
+
+    public function test_unsafe_interlude_is_not_forwarded_or_confused_with_the_last_public_chat_turn(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A cheerful thought!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"turn":"joke","reply":"A cheerful thought!"')
+                    && str_contains($prompt, 'A non-chat turn happened since that chat.')
+                    && ! str_contains($prompt, 'customer Ana')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: okay'))
+                ->andReturn('{"kind":"general_chat","reply":"Happy to chat!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke for customer Ana'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Okay'])
+            ->assertJsonPath('result.message', 'Happy to chat!');
+    }
+
+    public function test_disabling_chat_consent_discards_public_history_before_it_can_be_forwarded_again(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A cheerful thought!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me another joke about thrift shopping')
+                ->andReturn('{"kind":"general_chat","reply":"A lovely twist!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke']);
+        config(['services.gemini.allow_conversation' => false]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Okay'])
+            ->assertJsonPath('result.status', 'general_chat');
+        config(['services.gemini.allow_conversation' => true]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A lovely twist!');
     }
 
     public function test_a_screened_public_store_paraphrase_can_clarify_via_mocked_intent_without_store_data(): void
@@ -231,7 +380,7 @@ class AssistantControllerTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_owner_chat_over_http_sends_only_the_screened_current_turn_with_separate_consent(): void
+    public function test_owner_chat_over_http_sends_only_a_public_store_topic_with_separate_consent(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
         $owner = $this->createUser('store_owner');
@@ -243,7 +392,9 @@ class AssistantControllerTest extends TestCase
                 ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'clarification / sales_goal'))
                 ->andReturn('{"style":"warm","suggested_skill":"none"}');
             $mock->shouldReceive('generateText')->once()
-                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me a joke about thrift shopping')
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'A store question about sales happened since that chat.')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: tell me a joke about thrift shopping')
+                    && ! str_contains($prompt, 'sales_goal'))
                 ->andReturn('{"kind":"general_chat","reply":"A preloved jacket gets another chapter!"}');
         });
 

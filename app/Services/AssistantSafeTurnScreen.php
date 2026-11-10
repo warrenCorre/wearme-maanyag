@@ -23,6 +23,8 @@ class AssistantSafeTurnScreen
         'sustainable', 'thrift', 'thrifting', 'upcycling', 'vintage',
     ];
 
+    private const ACKNOWLEDGEMENTS = ['ok', 'okay', 'alright', 'got it'];
+
     public function screen(string $question): ?string
     {
         $question = trim($question);
@@ -33,6 +35,10 @@ class AssistantSafeTurnScreen
 
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
         $words = explode(' ', $turn);
+
+        if (in_array($turn, self::ACKNOWLEDGEMENTS, true)) {
+            return $turn;
+        }
 
         if (count($words) > 30 || array_diff($words, self::WORDS) !== []
             || array_intersect($words, self::PUBLIC_TOPICS) === []) {

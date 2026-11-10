@@ -40,6 +40,7 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('general_chat', $policy->evaluate('Can you tell me a joke?', $date)['intent']);
         $this->assertSame('general_chat', $policy->evaluate('Say something funny', $date)['intent']);
         $this->assertSame('general_chat', $policy->evaluate('What do you think about vintage fashion?', $date)['intent']);
+        $this->assertSame('general_chat', $policy->evaluate('Okay', $date)['intent']);
 
         foreach (['Tell me a joke about Customer Ana', 'Tell me a joke about sales', 'What is thrift shopping?', 'Tell me a joke about thrift shopping for Ana'] as $question) {
             $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);

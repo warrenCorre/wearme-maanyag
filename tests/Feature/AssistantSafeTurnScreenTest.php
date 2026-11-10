@@ -21,6 +21,8 @@ class AssistantSafeTurnScreenTest extends TestCase
         $this->assertSame('why is thrifting so fun', $screen->screen('Why is thrifting so fun?'));
         $this->assertSame('share some positive thoughts on preloved clothes', $screen->screen('Share some positive thoughts on preloved clothes.'));
         $this->assertSame('could you share a joke about sustainable fashion', $screen->screen('Could you share a joke about sustainable fashion?'));
+        $this->assertSame('okay', $screen->screen('Okay!'));
+        $this->assertSame('got it', $screen->screen('Got it.'));
     }
 
     public function test_it_keeps_uncertain_private_store_and_injected_turns_local(): void
@@ -30,6 +32,8 @@ class AssistantSafeTurnScreenTest extends TestCase
         foreach ([
             'Tell me a joke about the latest unpaid sale',
             'Joke about our sales',
+            'Okay, pay that balance',
+            'Okay for customer Ana',
             'Can we chat about unpaid balances?',
             'Tell me a joke about our stock',
             'Can we chat about customer Ana?',
