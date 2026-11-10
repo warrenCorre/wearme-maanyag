@@ -531,6 +531,25 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('disabled until sharing store data');
     }
 
+    public function test_owner_receives_sourced_empty_best_seller_answer_over_json_without_a_provider_call(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 2)->startOfDay());
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'List best-selling products'])
+            ->assertExactJson(['result' => [
+                'status' => 'answered',
+                'message' => 'No best-selling products can be ranked from recorded paid sales yet.',
+                'sources' => [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+            ]]);
+    }
+
     public function test_owner_sees_unsupported_question_as_a_declined_chat_message(): void
     {
         $owner = $this->createUser('store_owner');

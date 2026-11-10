@@ -152,6 +152,18 @@ class AssistantAnswerService
         $context = $this->contextService->build($decision['period'] ?? 'monthly', $date);
         $relevantContext = $this->contextForIntent($context, $intent);
         $allowedSources = $this->responseValidator->allowedSourcesFor($intent, $context);
+
+        if ($intent === 'best_sellers' && ($context['best_sellers'] ?? null) === [] && count($allowedSources) === 1) {
+            return [
+                'status' => 'answered',
+                'message' => 'No best-selling products can be ranked from recorded paid sales yet.',
+                'sources' => $allowedSources,
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+                'visit_context' => ['intent' => $intent],
+            ];
+        }
+
         $relevantContext['allowed_sources'] = $allowedSources;
         $prompt = $this->promptBuilder->build($decision['safe_question'] ?? '', $relevantContext);
 
