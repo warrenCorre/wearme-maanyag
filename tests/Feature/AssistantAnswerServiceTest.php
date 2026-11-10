@@ -288,6 +288,55 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('One pending balance per sale', $capturedPrompt);
     }
 
+    public function test_empty_best_seller_rankings_get_a_sourced_local_answer_without_contacting_gemini(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn([
+            'best_sellers' => [],
+            'as_of' => $this->asOf(),
+        ]);
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer('List best-selling products');
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('No best-selling products can be ranked from recorded paid sales yet.', $result['message']);
+        $this->assertSame([['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']], $result['sources']);
+        $this->assertSame('fact', $result['answer_type']);
+        $this->assertSame(['intent' => 'best_sellers'], $result['visit_context']);
+    }
+
+    public function test_best_seller_rankings_remain_disabled_without_store_sharing(): void
+    {
+        config(['services.gemini.allow_store_data' => false, 'services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer('List best-selling products');
+
+        $this->assertSame('disabled', $result['status']);
+    }
+
+    public function test_missing_best_seller_data_is_not_mistaken_for_a_verified_empty_ranking(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn(['as_of' => $this->asOf()]);
+        $geminiClient = Mockery::mock(GeminiClient::class);
+        $geminiClient->shouldReceive('generateText')->once()->andReturn($this->structuredResponse(
+            'The verified ranking is unavailable.', 'refusal', [], 'low', true,
+        ));
+
+        $result = $this->makeAnswerService($contextService, $geminiClient)->answer('List best-selling products');
+
+        $this->assertSame('refused', $result['status']);
+        $this->assertNotSame('No best-selling products can be ranked from recorded paid sales yet.', $result['message']);
+    }
+
     public function test_it_keeps_collection_dates_behind_the_disabled_store_data_gate(): void
     {
         config(['services.gemini.allow_store_data' => false]);
