@@ -9,6 +9,8 @@ use App\Services\AssistantLatestUnpaidSaleService;
 use App\Services\AssistantPromptBuilder;
 use App\Services\AssistantQuestionPolicy;
 use App\Services\AssistantResponseValidator;
+use App\Services\AssistantSafeChatService;
+use App\Services\AssistantSafeTurnScreen;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -18,6 +20,22 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_general_chat_does_not_read_store_data_or_create_visit_context_when_sharing_is_off(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Tell me a joke about thrift shopping!');
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertStringContainsString('thrift joke', $result['message']);
+        $this->assertArrayNotHasKey('visit_context', $result);
+        $this->assertArrayNotHasKey('sources', $result);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -639,13 +657,14 @@ class AssistantAnswerServiceTest extends TestCase
         ?AssistantLatestUnpaidSaleService $latestSaleService = null,
     ): AssistantAnswerService {
         return new AssistantAnswerService(
-            new AssistantQuestionPolicy,
+            new AssistantQuestionPolicy(new AssistantSafeTurnScreen),
             $contextService,
             new AssistantPromptBuilder,
             $geminiClient,
             new AssistantResponseValidator,
             new AssistantConversationService($geminiClient),
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
+            new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
         );
     }
 }

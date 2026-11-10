@@ -8,6 +8,25 @@ use Tests\TestCase;
 
 class AssistantQuestionPolicyTest extends TestCase
 {
+    public function test_it_routes_only_safe_non_store_chat_after_existing_skill_decisions(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $chat = $policy->evaluate('Tell me a joke about thrift shopping!', $date);
+
+        $this->assertSame('general_chat', $chat['intent']);
+        $this->assertSame('tell me a joke about thrift shopping', $chat['chat_turn']);
+        $this->assertNull($chat['safe_question']);
+        $this->assertNull($chat['period']);
+        $this->assertSame('unpaid_goal', $policy->evaluate('Unpaid balances?', $date)['clarification']);
+        $this->assertSame('latest_unpaid_sale', $policy->evaluate('Show the latest unpaid sale', $date)['intent']);
+
+        foreach (['Tell me a joke about Customer Ana', 'Tell me a joke about sales', 'What is thrift shopping?', 'Tell me a joke about thrift shopping for Ana'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_it_converts_a_supported_sales_question_to_a_safe_normalized_prompt(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

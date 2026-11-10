@@ -82,6 +82,7 @@
                         $resultClasses = match ($result['status']) {
                             'answered' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'social' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
+                            'general_chat' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'clarification' => 'border-emerald-700 bg-emerald-50 text-emerald-950',
                             'declined', 'refused' => 'border-amber-700 bg-amber-50 text-amber-950',
                             default => 'border-slate-400 bg-slate-50 text-slate-800',
@@ -89,6 +90,7 @@
                         $resultLabel = match ($result['status']) {
                             'answered' => 'Answer',
                             'social' => 'Chat',
+                            'general_chat' => 'General chat · not store facts',
                             'clarification' => 'Quick question',
                             'declined' => 'Not supported',
                             'refused' => 'Not enough information',
@@ -201,6 +203,7 @@
             const statuses = {
                 answered: ['Answer', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 social: ['Chat', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
+                general_chat: ['General chat · not store facts', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 clarification: ['Quick question', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 declined: ['Not supported', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],
                 refused: ['Not enough information', 'border-amber-700', 'bg-amber-50', 'text-amber-950'],

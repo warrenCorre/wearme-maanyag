@@ -7,8 +7,10 @@ use Carbon\CarbonInterface;
 
 class AssistantQuestionPolicy
 {
+    public function __construct(private AssistantSafeTurnScreen $turnScreen) {}
+
     /**
-     * @return array{allowed: bool, intent: ?string, period: ?string, date: string, safe_question: ?string, social_reply?: string, clarification?: string, reason: ?string}
+     * @return array{allowed: bool, intent: ?string, period: ?string, date: string, safe_question: ?string, social_reply?: string, clarification?: string, chat_turn?: string, reason: ?string}
      */
     public function evaluate(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
@@ -180,6 +182,20 @@ class AssistantQuestionPolicy
             return $routing['type'] === 'clarification'
                 ? $this->clarification($date, $routing['value'])
                 : $this->evaluate($routing['value'], $date);
+        }
+
+        $chatTurn = $this->turnScreen->screen($question);
+
+        if ($chatTurn !== null) {
+            return [
+                'allowed' => true,
+                'intent' => 'general_chat',
+                'period' => null,
+                'date' => $date->toDateString(),
+                'safe_question' => null,
+                'chat_turn' => $chatTurn,
+                'reason' => null,
+            ];
         }
 
         return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.');

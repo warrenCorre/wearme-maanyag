@@ -18,11 +18,12 @@ class AssistantAnswerService
         private AssistantResponseValidator $responseValidator,
         private AssistantConversationService $conversationService,
         private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
+        private AssistantSafeChatService $safeChatService,
     ) {}
 
     /**
      * @return array{
-     *     status: 'declined'|'disabled'|'answered'|'social'|'clarification'|'refused'|'invalid'|'unavailable',
+     *     status: 'declined'|'disabled'|'answered'|'social'|'general_chat'|'clarification'|'refused'|'invalid'|'unavailable',
      *     message: string,
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
@@ -58,6 +59,13 @@ class AssistantAnswerService
                     'joke' => 'A little store-themed joke: Why did the hanger stay calm? It knew how to hang in there.',
                     default => 'Hi! I am Maanyag. How can I help with the store today?',
                 },
+            ];
+        }
+
+        if ($decision['intent'] === 'general_chat') {
+            return [
+                'status' => 'general_chat',
+                'message' => $this->safeChatService->reply($decision['chat_turn']),
             ];
         }
 
