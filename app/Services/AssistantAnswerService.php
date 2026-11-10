@@ -30,7 +30,7 @@ class AssistantAnswerService
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
-     *     visit_context?: array{intent?: string, pending?: string, chat_topic?: string}
+     *     visit_context?: array{intent?: string, pending?: string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>}
      * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
@@ -83,10 +83,33 @@ class AssistantAnswerService
         }
 
         if ($decision['intent'] === 'general_chat') {
+            $conversationEnabled = config('services.gemini.allow_conversation', false);
+            $history = $conversationEnabled
+                ? $this->safeChatService->screenedHistory($visitContext['chat_history'] ?? []) : [];
+
+            if (count($history) >= AssistantSafeChatService::MAX_CHAT_EXCHANGES) {
+                return [
+                    'status' => 'general_chat',
+                    'message' => 'This chat has reached its 40-exchange public memory limit. Start a New Chat to keep chatting.',
+                    'visit_context' => ['chat_topic' => 'thrift', 'chat_history' => $history],
+                ];
+            }
+
+            $turn = $decision['chat_turn'];
+            $storeTopic = is_string($visitContext['store_topic'] ?? null) ? $visitContext['store_topic'] : null;
+            $reply = $this->safeChatService->reply($turn, $history, $storeTopic);
+
+            if ($conversationEnabled) {
+                $history[] = ['turn' => $turn, 'reply' => $reply];
+            }
+
             return [
                 'status' => 'general_chat',
-                'message' => $this->safeChatService->reply($decision['chat_turn']),
-                'visit_context' => ['chat_topic' => 'thrift'],
+                'message' => $reply,
+                'visit_context' => [
+                    'chat_topic' => 'thrift',
+                    ...($conversationEnabled ? ['chat_history' => $history] : []),
+                ],
             ];
         }
 
@@ -108,6 +131,7 @@ class AssistantAnswerService
             return [
                 'status' => 'answered',
                 'message' => $this->latestUnpaidSaleService->answer(),
+                'visit_context' => ['store_topic' => 'unpaid'],
             ];
         }
 

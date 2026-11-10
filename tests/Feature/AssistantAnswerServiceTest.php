@@ -383,8 +383,24 @@ class AssistantAnswerServiceTest extends TestCase
 
         $this->assertSame('answered', $result['status']);
         $this->assertSame('Latest unpaid sale: SYN-LOCAL for Synthetic Buyer.', $result['message']);
-        $this->assertArrayNotHasKey('visit_context', $result);
+        $this->assertSame(['store_topic' => 'unpaid'], $result['visit_context']);
         $this->assertArrayNotHasKey('sources', $result);
+    }
+
+    public function test_chat_memory_limit_is_visible_and_does_not_silently_forget_earlier_turns(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $history = array_fill(0, 40, ['turn' => 'joke', 'reply' => 'A happy thought!']);
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Okay', null, ['chat_history' => $history]);
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertStringContainsString('Start a New Chat', $result['message']);
+        $this->assertSame($history, $result['visit_context']['chat_history']);
     }
 
     public function test_separately_enabled_conversation_can_choose_a_safe_reply_without_store_queries(): void
