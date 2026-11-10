@@ -387,6 +387,50 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertArrayNotHasKey('sources', $result);
     }
 
+    public function test_latest_pending_confirmation_and_cancellation_are_entirely_local(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $latestSale = Mockery::mock(AssistantLatestUnpaidSaleService::class);
+        $latestSale->shouldReceive('answer')->once()->andReturn('Synthetic local sale details.');
+        $service = $this->makeAnswerService($contextService, $client, $latestSale);
+
+        $clarification = $service->answer('Latest pending?');
+
+        $this->assertSame('clarification', $clarification['status']);
+        $this->assertSame('Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.', $clarification['message']);
+        $this->assertSame(['pending' => 'latest_pending_sale_confirmation'], $clarification['visit_context']);
+
+        $answer = $service->answer('Yes', null, $clarification['visit_context']);
+
+        $this->assertSame('answered', $answer['status']);
+        $this->assertSame('Synthetic local sale details.', $answer['message']);
+        $this->assertSame(['store_topic' => 'unpaid'], $answer['visit_context']);
+        $this->assertSame([
+            'status' => 'social', 'message' => "Okay, I won't look up a sale.",
+        ], $service->answer('No', null, $clarification['visit_context']));
+        $this->assertSame('declined', $service->answer('Yes')['status']);
+    }
+
+    public function test_unsafe_confirmation_never_looks_up_a_sale_or_calls_the_provider(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $latestSale = Mockery::mock(AssistantLatestUnpaidSaleService::class);
+        $latestSale->shouldNotReceive('answer');
+        $service = $this->makeAnswerService($contextService, $client, $latestSale);
+
+        foreach (['Yes, pay it', 'Yes for Customer Ana', 'Latest pending sales', 'Latest pending today'] as $question) {
+            $this->assertSame('declined', $service->answer($question, null, ['pending' => 'latest_pending_sale_confirmation'])['status'], $question);
+        }
+    }
+
     public function test_chat_memory_limit_is_visible_and_does_not_silently_forget_earlier_turns(): void
     {
         config(['services.gemini.allow_conversation' => true]);

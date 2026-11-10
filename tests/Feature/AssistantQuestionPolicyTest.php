@@ -276,11 +276,36 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertNull($result['reason']);
     }
 
+    public function test_latest_pending_needs_a_specific_confirmation_before_selecting_one_private_sale(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $clarification = $policy->evaluate('Latest pending?', $date);
+
+        $this->assertSame('clarification', $clarification['intent']);
+        $this->assertSame('latest_pending_sale_confirmation', $clarification['clarification']);
+        $this->assertNull($clarification['safe_question']);
+        $this->assertSame('latest_unpaid_sale', $policy->evaluate('Yes!', $date, ['pending' => 'latest_pending_sale_confirmation'])['intent']);
+        $this->assertSame('cancel_latest_pending_sale', $policy->evaluate('No', $date, ['pending' => 'latest_pending_sale_confirmation'])['social_reply']);
+
+        foreach (['Yes', 'No', 'Latest pending sales', 'Latest pending for Customer Ana', 'Yes, pay it', 'Yes for Customer Ana'] as $question) {
+            $decision = $policy->evaluate($question, $date);
+
+            $this->assertNotSame('latest_unpaid_sale', $decision['intent'], $question);
+            $this->assertNull($decision['safe_question'], $question);
+        }
+
+        $this->assertNotSame('latest_unpaid_sale', $policy->evaluate('Yes', $date, ['pending' => 'unpaid_goal'])['intent']);
+        $this->assertFalse($policy->evaluate('Yes, pay it', $date, ['pending' => 'latest_pending_sale_confirmation'])['allowed']);
+        $this->assertFalse($policy->evaluate('Yes for Customer Ana', $date, ['pending' => 'latest_pending_sale_confirmation'])['allowed']);
+    }
+
     public function test_only_explicit_latest_unpaid_sale_phrases_can_select_a_local_customer_detail(): void
     {
         $policy = app(AssistantQuestionPolicy::class);
 
-        foreach (['Show the latest unpaid sale', 'Most recent pending transaction', 'What about the latest unpaid sale?', 'Hi, show me the latest unpaid sale!'] as $question) {
+        foreach (['Show the latest unpaid sale', 'Latest pending sale', 'Most recent pending transaction', 'What about the latest unpaid sale?', 'Hi, show me the latest unpaid sale!'] as $question) {
             $result = $policy->evaluate($question, CarbonImmutable::parse('2026-11-07'));
 
             $this->assertTrue($result['allowed'], $question);

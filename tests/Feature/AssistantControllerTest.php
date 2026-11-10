@@ -651,6 +651,107 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'declined');
     }
 
+    public function test_latest_pending_requires_yes_to_read_one_fictional_sale_and_never_sends_it_to_gemini(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $sale = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-CONFIRM-001',
+            'sale_type' => 'walk_in',
+            'online_platform' => '',
+            'customer_name' => 'Synthetic Buyer',
+            'customer_contact' => '0000000001',
+            'delivery_address' => 'Synthetic address',
+            'total_amount' => '35.00',
+            'payment_status' => 'partially_paid',
+            'recorded_by' => $owner->id,
+            'transaction_date' => '2026-11-07 10:00:00',
+        ]);
+        $sale->unpaidPayment()->create([
+            'amount_paid' => '10.00', 'balance' => '25.00', 'payment_date' => null,
+            'status' => 'pending', 'updated_by' => $owner->id,
+        ]);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending?'])
+            ->assertExactJson(['result' => [
+                'status' => 'clarification',
+                'message' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
+            ]]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('SYN-CONFIRM-001')
+            ->assertSee('Synthetic Buyer')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_no_cancels_latest_pending_confirmation_and_an_unsafe_reply_clears_it(): void
+    {
+        config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'No'])
+            ->assertExactJson(['result' => ['status' => 'social', 'message' => "Okay, I won't look up a sale."]]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes for Customer Ana'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending sales'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_latest_pending_confirmation_resets_on_new_chat_expiry_owner_change_and_logout(): void
+    {
+        $this->travelTo(now()->startOfMinute());
+        $owner = $this->createUser('store_owner');
+        $other = User::query()->create([
+            'name' => 'Synthetic Other Owner', 'email' => 'confirm-other@example.test',
+            'password' => 'synthetic-password', 'phone' => '0000000000',
+            'address' => 'Synthetic address', 'role' => 'store_owner',
+            'profile_image' => '', 'status' => 'active',
+        ]);
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->get(route('assistant.index'))->assertOk();
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->travel(21)->minutes();
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->actingAs($other)->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Latest pending'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Yes'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
     public function test_natural_unpaid_question_clarifies_locally_then_shows_only_the_latest_sale_without_a_provider_call(): void
     {
         config(['services.gemini.allow_store_data' => true]);
@@ -722,6 +823,10 @@ class AssistantControllerTest extends TestCase
         $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'Show the latest unpaid sale'])
             ->assertForbidden();
         $this->postJson(route('assistant.ask'), ['question' => 'Unpaid balances?'])
+            ->assertForbidden();
+        $this->postJson(route('assistant.ask'), ['question' => 'Latest pending?'])
+            ->assertForbidden();
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes'])
             ->assertForbidden();
     }
 

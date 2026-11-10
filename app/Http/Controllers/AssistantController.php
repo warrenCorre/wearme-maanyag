@@ -56,7 +56,7 @@ class AssistantController extends Controller
             $intent = $result['visit_context']['intent'] ?? null;
             $pending = $result['visit_context']['pending'] ?? null;
             $storeTopic = match (true) {
-                ($result['visit_context']['store_topic'] ?? null) === 'unpaid', $intent === 'unpaid_summary', $pending === 'unpaid_goal' => 'unpaid',
+                ($result['visit_context']['store_topic'] ?? null) === 'unpaid', $intent === 'unpaid_summary', in_array($pending, ['unpaid_goal', 'latest_pending_sale_confirmation'], true) => 'unpaid',
                 in_array($intent, ['sales_summary', 'best_sellers'], true), in_array($pending, ['sales_goal', 'sales_period'], true) => 'sales',
                 in_array($intent, ['inventory_summary', 'low_stock'], true) => 'inventory',
                 $intent === 'collection_dates' => 'collections',
@@ -76,7 +76,7 @@ class AssistantController extends Controller
                 'intent' => $result['visit_context']['intent'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'clarification' && in_array($result['visit_context']['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal',
+            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,

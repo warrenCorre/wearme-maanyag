@@ -74,6 +74,10 @@ class AssistantIntentRouter
                     return $this->question('Show the latest unpaid sale');
                 }
 
+                if (preg_match('/^(?:(?:show(?: me)?|what about|what is) (?:the )?)?latest pending$/', $question) === 1) {
+                    return $this->clarification('latest_pending_sale_confirmation');
+                }
+
                 return null;
             }
 

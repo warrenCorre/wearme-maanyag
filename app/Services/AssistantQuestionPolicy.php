@@ -39,6 +39,16 @@ class AssistantQuestionPolicy
 
         $pending = $visitContext['pending'] ?? null;
 
+        if ($pending === 'latest_pending_sale_confirmation') {
+            if ($normalizedQuestion === 'yes') {
+                return $this->localLatestUnpaidSale($date);
+            }
+
+            if ($normalizedQuestion === 'no') {
+                return $this->localSocial($date, 'cancel_latest_pending_sale');
+            }
+        }
+
         if ($pending === 'sales_goal') {
             if (in_array($normalizedQuestion, ['totals', 'total', 'sales totals', 'revenue', 'transactions', 'transaction counts'], true)) {
                 return $this->clarification($date, 'sales_period');

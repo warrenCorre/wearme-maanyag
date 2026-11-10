@@ -63,6 +63,10 @@ class AssistantAnswerService
         }
 
         if ($decision['intent'] === 'local_social') {
+            if ($decision['social_reply'] === 'cancel_latest_pending_sale') {
+                return ['status' => 'social', 'message' => "Okay, I won't look up a sale."];
+            }
+
             return [
                 'status' => 'social',
                 'message' => $this->conversationService->reply('social', $decision['social_reply']) ?? match ($decision['social_reply']) {
@@ -122,6 +126,7 @@ class AssistantAnswerService
                     'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
                     'sales_period' => 'Which period for sales totals: today, yesterday, this week, this month, or this year?',
                     'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
+                    'latest_pending_sale_confirmation' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
                 },
                 'visit_context' => ['pending' => $topic],
             ];
