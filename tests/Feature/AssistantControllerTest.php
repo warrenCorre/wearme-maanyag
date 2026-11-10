@@ -266,6 +266,29 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'declined');
     }
 
+    public function test_natural_unpaid_question_clarifies_locally_then_shows_only_the_latest_sale_without_a_provider_call(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Unpaid balances?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.');
+        $this->postJson(route('assistant.ask'), ['question' => 'The latest one'])
+            ->assertExactJson(['result' => [
+                'status' => 'answered',
+                'message' => 'No pending unpaid sale with a positive balance was found.',
+            ]]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Aggregate'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
     public function test_only_the_owner_sees_local_latest_sale_details_escaped_in_html_without_a_provider_call(): void
     {
         config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
@@ -312,6 +335,8 @@ class AssistantControllerTest extends TestCase
         });
 
         $this->actingAs($cashier)->postJson(route('assistant.ask'), ['question' => 'Show the latest unpaid sale'])
+            ->assertForbidden();
+        $this->postJson(route('assistant.ask'), ['question' => 'Unpaid balances?'])
             ->assertForbidden();
     }
 

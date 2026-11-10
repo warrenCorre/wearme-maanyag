@@ -174,6 +174,14 @@ class AssistantQuestionPolicy
             return $this->localSocial($date, $socialReply);
         }
 
+        $routing = (new AssistantIntentRouter)->route($normalizedQuestion);
+
+        if ($routing !== null) {
+            return $routing['type'] === 'clarification'
+                ? $this->clarification($date, $routing['value'])
+                : $this->evaluate($routing['value'], $date);
+        }
+
         return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.');
     }
 

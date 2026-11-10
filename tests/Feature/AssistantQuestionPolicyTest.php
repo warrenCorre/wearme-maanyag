@@ -142,7 +142,26 @@ class AssistantQuestionPolicyTest extends TestCase
             $this->assertNull($result['safe_question'], $question);
         }
 
-        $this->assertFalse($policy->evaluate('What about inventory?', CarbonImmutable::parse('2026-11-07'))['allowed']);
+        $this->assertSame('inventory_summary', $policy->evaluate('What about inventory?', CarbonImmutable::parse('2026-11-07'))['intent']);
+    }
+
+    public function test_natural_store_phrases_keep_the_original_privacy_and_canonical_question_boundary(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $unpaid = $policy->evaluate('Could you tell me about unpaid balances?', $date);
+        $latest = $policy->evaluate('Could you show me the newest outstanding sale?', $date);
+        $sales = $policy->evaluate("What's going on with sales?", $date);
+        $summary = $policy->evaluate('How much is still owed?', $date);
+
+        $this->assertSame('unpaid_goal', $unpaid['clarification']);
+        $this->assertNull($unpaid['safe_question']);
+        $this->assertSame('latest_unpaid_sale', $latest['intent']);
+        $this->assertNull($latest['safe_question']);
+        $this->assertSame('sales_goal', $sales['clarification']);
+        $this->assertSame('unpaid_summary', $summary['intent']);
+        $this->assertSame('Report only aggregate pending sale counts and outstanding balances using the verified context. Never disclose customer details.', $summary['safe_question']);
     }
 
     public function test_it_can_rephrase_a_previous_aggregate_unpaid_balance_without_disclosing_a_sale(): void
