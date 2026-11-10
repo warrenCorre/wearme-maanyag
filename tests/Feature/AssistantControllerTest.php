@@ -24,6 +24,133 @@ class AssistantControllerTest extends TestCase
         config(['services.gemini.allow_conversation' => false]);
     }
 
+    public function test_short_joke_follow_up_uses_only_an_owner_scoped_chat_topic_then_resets_on_new_chat(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'Another thrift joke: Why did the scarf go exploring? It wanted a new twist!');
+        $this->get(route('assistant.index'))->assertOk();
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_chat_topic_expires_and_unsafe_turns_clear_it_without_provider_calls(): void
+    {
+        $this->travelTo(now()->startOfMinute());
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke for customer Ana'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->travel(21)->minutes();
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_chat_topic_cannot_cross_to_a_different_owner_or_survive_logout(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $otherOwner = User::query()->create([
+            'name' => 'Synthetic Other Owner',
+            'email' => 'synthetic-other-owner@example.test',
+            'password' => 'synthetic-password',
+            'phone' => '0000000000',
+            'address' => 'Synthetic address',
+            'role' => 'store_owner',
+            'profile_image' => '',
+            'status' => 'active',
+        ]);
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->actingAs($otherOwner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_follow_up_chat_sends_only_a_safe_current_turn_not_the_previous_joke(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me a joke about thrift shopping')
+                ->andReturn('{"kind":"general_chat","reply":"A jacket found a fresh chapter!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: tell me another joke about thrift shopping')
+                ->andReturn('{"kind":"general_chat","reply":"A scarf found a new twist!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
+            ->assertJsonPath('result.message', 'A jacket found a fresh chapter!');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'A scarf found a new twist!')
+            ->assertJsonMissingPath('result.visit_context');
+    }
+
+    public function test_a_screened_public_store_paraphrase_can_clarify_via_mocked_intent_without_store_data(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: could we talk about how our sales are doing')
+                ->andReturn('{"intent":"sales_goal","period":"none"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'clarification / sales_goal'))
+                ->andReturn('{"style":"warm","suggested_skill":"none"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Could we talk about how our sales are doing?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+    }
+
+    public function test_a_bounded_store_question_typo_clarifies_in_the_browser_without_a_provider_call(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Wahat about transaction counts?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+    }
+
     public function test_owner_sees_labeled_local_general_chat_and_no_saved_chat_context(): void
     {
         config(['services.gemini.allow_store_data' => true]);

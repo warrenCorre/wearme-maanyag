@@ -19,6 +19,8 @@ class AssistantAnswerService
         private AssistantConversationService $conversationService,
         private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
         private AssistantSafeChatService $safeChatService,
+        private AssistantStoreTurnScreen $storeTurnScreen,
+        private AssistantModelIntentService $modelIntentService,
     ) {}
 
     /**
@@ -28,12 +30,30 @@ class AssistantAnswerService
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
-     *     visit_context?: array{intent?: string, pending?: string}
+     *     visit_context?: array{intent?: string, pending?: string, chat_topic?: string}
      * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
+
+        if (! $decision['allowed'] && ($decision['model_candidate'] ?? false)) {
+            $screened = $this->storeTurnScreen->screen($question);
+
+            if ($screened !== null) {
+                if ($screened['corrected']) {
+                    $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
+                }
+
+                if (! $decision['allowed']) {
+                    $canonicalQuestion = $this->modelIntentService->suggest($question);
+
+                    if ($canonicalQuestion !== null) {
+                        $decision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate);
+                    }
+                }
+            }
+        }
 
         if (! $decision['allowed']) {
             return [
@@ -66,6 +86,7 @@ class AssistantAnswerService
             return [
                 'status' => 'general_chat',
                 'message' => $this->safeChatService->reply($decision['chat_turn']),
+                'visit_context' => ['chat_topic' => 'thrift'],
             ];
         }
 

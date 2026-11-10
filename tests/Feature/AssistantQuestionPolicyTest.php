@@ -8,6 +8,21 @@ use Tests\TestCase;
 
 class AssistantQuestionPolicyTest extends TestCase
 {
+    public function test_only_a_verified_safe_chat_topic_can_resolve_a_short_joke_follow_up(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $decision = $policy->evaluate('Joke', $date, ['chat_topic' => 'thrift']);
+
+        $this->assertSame('general_chat', $decision['intent']);
+        $this->assertSame('tell me another joke about thrift shopping', $decision['chat_turn']);
+        $this->assertNull($decision['safe_question']);
+        $this->assertFalse($policy->evaluate('Joke', $date)['allowed']);
+        $this->assertFalse($policy->evaluate('Joke', $date, ['chat_topic' => 'customer'])['allowed']);
+        $this->assertFalse($policy->evaluate('Joke for customer Ana', $date, ['chat_topic' => 'thrift'])['allowed']);
+    }
+
     public function test_it_routes_only_safe_non_store_chat_after_existing_skill_decisions(): void
     {
         $policy = app(AssistantQuestionPolicy::class);

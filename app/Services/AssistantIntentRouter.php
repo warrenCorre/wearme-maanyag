@@ -107,7 +107,9 @@ class AssistantIntentRouter
         }
 
         if ($inventory) {
-            if ($recent || $period !== null) {
+            if ($recent || $period !== null || $this->hasAny($words, ['list', 'all'])
+                || ($this->hasAny($words, ['product', 'products', 'item', 'items'])
+                    && ! $this->hasAny($words, ['low', 'running', 'many', 'quantity', 'quantities', 'total', 'value']))) {
                 return null;
             }
 
@@ -116,11 +118,11 @@ class AssistantIntentRouter
         }
 
         if ($bestSellers) {
-            return $recent || $period !== null || $this->hasAny($words, ['many', 'count', 'counts'])
+            return $recent || $period !== null || $this->hasAny($words, ['all', 'many', 'count', 'counts'])
                 ? null : $this->question('List best-selling products');
         }
 
-        return $period !== null || $this->hasAny($words, ['many', 'count', 'counts'])
+        return $period !== null || $this->hasAny($words, ['all', 'many', 'count', 'counts'])
             ? null : $this->question('List recently collected products');
     }
 

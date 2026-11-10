@@ -44,6 +44,11 @@ class AssistantController extends Controller
                 'owner_id' => $request->user()->id,
                 'pending' => $result['visit_context']['pending'],
             ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'general_chat' && ($result['visit_context']['chat_topic'] ?? null) === 'thrift') {
+            $request->session()->cache()->put('assistant.visit_context', [
+                'owner_id' => $request->user()->id,
+                'chat_topic' => 'thrift',
+            ], now()->addMinutes(20));
         } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['intent'] ?? null, [
             'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
         ], true)) {

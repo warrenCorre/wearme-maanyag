@@ -29,6 +29,7 @@ class AssistantSafeChatServiceTest extends TestCase
         $reply = $this->service($client)->reply('tell me a joke about thrift shopping');
 
         $this->assertStringContainsString('thrift joke', $reply);
+        $this->assertStringContainsString('new twist', $this->service($client)->reply('tell me another joke about thrift shopping'));
     }
 
     public function test_only_a_re_screened_current_public_turn_goes_to_the_mocked_provider(): void
