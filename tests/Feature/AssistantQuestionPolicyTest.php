@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 class AssistantQuestionPolicyTest extends TestCase
 {
-    public function test_only_a_verified_safe_chat_topic_can_resolve_a_short_joke_follow_up(): void
+    public function test_a_verified_chat_topic_can_resolve_a_joke_follow_up_without_being_required_for_a_first_joke(): void
     {
         $policy = app(AssistantQuestionPolicy::class);
         $date = CarbonImmutable::parse('2026-11-07');
@@ -18,8 +18,8 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('general_chat', $decision['intent']);
         $this->assertSame('tell me another joke about thrift shopping', $decision['chat_turn']);
         $this->assertNull($decision['safe_question']);
-        $this->assertFalse($policy->evaluate('Joke', $date)['allowed']);
-        $this->assertFalse($policy->evaluate('Joke', $date, ['chat_topic' => 'customer'])['allowed']);
+        $this->assertSame('joke', $policy->evaluate('Joke', $date)['chat_turn']);
+        $this->assertSame('joke', $policy->evaluate('Joke', $date, ['chat_topic' => 'customer'])['chat_turn']);
         $this->assertFalse($policy->evaluate('Joke for customer Ana', $date, ['chat_topic' => 'thrift'])['allowed']);
     }
 
@@ -36,6 +36,10 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertNull($chat['period']);
         $this->assertSame('unpaid_goal', $policy->evaluate('Unpaid balances?', $date)['clarification']);
         $this->assertSame('latest_unpaid_sale', $policy->evaluate('Show the latest unpaid sale', $date)['intent']);
+        $this->assertSame('general_chat', $policy->evaluate('Tell me a joke', $date)['intent']);
+        $this->assertSame('general_chat', $policy->evaluate('Can you tell me a joke?', $date)['intent']);
+        $this->assertSame('general_chat', $policy->evaluate('Say something funny', $date)['intent']);
+        $this->assertSame('general_chat', $policy->evaluate('What do you think about vintage fashion?', $date)['intent']);
 
         foreach (['Tell me a joke about Customer Ana', 'Tell me a joke about sales', 'What is thrift shopping?', 'Tell me a joke about thrift shopping for Ana'] as $question) {
             $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
@@ -321,7 +325,6 @@ class AssistantQuestionPolicyTest extends TestCase
             'How are you?' => 'check_in',
             'What can you do?' => 'help',
             'Who are you?' => 'help',
-            'Tell me a joke' => 'joke',
             'Bye!' => 'goodbye',
         ] as $question => $reply) {
             $result = $policy->evaluate($question, CarbonImmutable::parse('2026-11-07'));

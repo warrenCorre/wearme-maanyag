@@ -326,7 +326,6 @@ class AssistantAnswerServiceTest extends TestCase
                 'Good evening Maanyag' => 'Good evening!',
                 'Thank you!' => 'You are welcome!',
                 'How are you?' => 'Thanks for checking in!',
-                'Tell me a joke' => 'A little store-themed joke:',
             ] as $question => $expectedOpening) {
                 $result = $service->answer($question, CarbonImmutable::parse('2026-11-07'));
 
@@ -336,6 +335,22 @@ class AssistantAnswerServiceTest extends TestCase
                 $this->assertArrayNotHasKey('visit_context', $result, $question);
             }
         }
+    }
+
+    public function test_first_message_joke_uses_labeled_chat_without_store_context_or_conversation_consent(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Joke');
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertStringContainsString('thrift joke', $result['message']);
+        $this->assertSame(['chat_topic' => 'thrift'], $result['visit_context']);
+        $this->assertArrayNotHasKey('sources', $result);
     }
 
     public function test_goal_clarification_does_not_fetch_store_data_or_require_store_sharing(): void

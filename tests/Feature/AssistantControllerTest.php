@@ -24,7 +24,7 @@ class AssistantControllerTest extends TestCase
         config(['services.gemini.allow_conversation' => false]);
     }
 
-    public function test_short_joke_follow_up_uses_only_an_owner_scoped_chat_topic_then_resets_on_new_chat(): void
+    public function test_first_joke_and_follow_up_use_only_a_visit_topic_then_new_chat_starts_a_fresh_joke(): void
     {
         $owner = $this->createUser('store_owner');
         $this->mock(GeminiClient::class, function (MockInterface $mock): void {
@@ -39,7 +39,8 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.message', 'Another thrift joke: Why did the scarf go exploring? It wanted a new twist!');
         $this->get(route('assistant.index'))->assertOk();
         $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
-            ->assertJsonPath('result.status', 'declined');
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!');
     }
 
     public function test_chat_topic_expires_and_unsafe_turns_clear_it_without_provider_calls(): void
@@ -55,12 +56,12 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'Joke for customer Ana'])
             ->assertJsonPath('result.status', 'declined');
         $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
-            ->assertJsonPath('result.status', 'declined');
+            ->assertJsonPath('result.message', 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!');
         $this->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
             ->assertJsonPath('result.status', 'general_chat');
         $this->travel(21)->minutes();
         $this->postJson(route('assistant.ask'), ['question' => 'Joke'])
-            ->assertJsonPath('result.status', 'declined');
+            ->assertJsonPath('result.message', 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!');
     }
 
     public function test_chat_topic_cannot_cross_to_a_different_owner_or_survive_logout(): void
@@ -83,11 +84,57 @@ class AssistantControllerTest extends TestCase
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
             ->assertJsonPath('result.status', 'general_chat');
         $this->actingAs($otherOwner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
-            ->assertJsonPath('result.status', 'declined');
+            ->assertJsonPath('result.message', 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!');
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Tell me a joke about thrift shopping'])
             ->assertJsonPath('result.status', 'general_chat');
         $this->post(route('logout'))->assertRedirect(route('login'));
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertJsonPath('result.message', 'A little thrift joke: Why did the jacket enjoy another season? It got a fresh start!');
+    }
+
+    public function test_first_message_joke_and_public_chat_are_labeled_over_http_with_mocked_provider(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: joke')
+                ->andReturn('{"kind":"general_chat","reply":"A jacket found a fresh chapter!"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: what do you think about vintage fashion')
+                ->andReturn('{"kind":"general_chat","reply":"Vintage style gives clothes a fresh chapter!"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke'])
+            ->assertExactJson(['result' => ['status' => 'general_chat', 'message' => 'A jacket found a fresh chapter!']]);
+        $this->get(route('assistant.index'))->assertOk();
+        $this->post(route('assistant.ask'), ['question' => 'What do you think about vintage fashion?'])
+            ->assertOk()
+            ->assertSee('General chat · not store facts')
+            ->assertSee('Vintage style gives clothes a fresh chapter!');
+    }
+
+    public function test_unsafe_or_store_turns_never_reach_general_chat_provider(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Joke for customer Ana'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke about our sales'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'What is the weather while thrift shopping?'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Joke about my jacket'])
             ->assertJsonPath('result.status', 'declined');
     }
 
