@@ -29,7 +29,7 @@
                 <a class="mt-4 hidden items-center justify-center gap-2 rounded-xl border-2 border-slate-900 bg-slate-900 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 xl:flex" href="{{ route('assistant.index') }}">
                     <span aria-hidden="true">＋</span> New Chat
                 </a>
-                <p class="mt-3 text-xs font-medium leading-relaxed text-slate-500">Follow up during this visit. New Chat and returning here start fresh; chats are not saved.</p>
+                <p class="mt-3 text-xs font-medium leading-relaxed text-slate-500">Follow up during this visit. With conversation sharing enabled, up to 40 screened public-chat exchanges are temporarily kept and may be sent to Gemini. New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.</p>
             </div>
 
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-5">

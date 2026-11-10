@@ -445,6 +445,9 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Maximum 500 characters');
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
         $response->assertSee('Follow up during this visit');
+        $response->assertSee('With conversation sharing enabled, up to 40 screened public-chat exchanges are temporarily kept and may be sent to Gemini.');
+        $response->assertSee('New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.');
+        $response->assertDontSee('chats are not saved');
         $response->assertSee('Greetings and brief chat still work with a local fallback');
         $response->assertSee('List recently collected products.');
         $response->assertSee('Show the latest unpaid sale.');
