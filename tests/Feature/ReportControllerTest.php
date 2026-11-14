@@ -105,6 +105,30 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_daily_report_includes_both_day_boundaries_without_neighboring_sales(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-BEFORE', '10.00', '2026-11-13 23:59:59'],
+            ['SYN-START', '40.00', '2026-11-14 00:00:00'],
+            ['SYN-END', '60.00', '2026-11-14 23:59:59'],
+            ['SYN-AFTER', '20.00', '2026-11-15 00:00:00'],
+        ] as [$number, $total, $date]) {
+            $this->createReportSale($owner, $number, $total, $date);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'daily', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk();
+        $this->assertSame(['transaction_count' => 2, 'total_sales' => 100.0, 'average_sale' => 50.0], $response['report']['summary']);
+        $this->assertSame(40.0, $response['report']['chart']['totals'][0]);
+        $this->assertSame(60.0, $response['report']['chart']['totals'][23]);
+        $this->assertSame(0.0, $response['report']['chart']['totals'][1]);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
@@ -209,6 +233,19 @@ class ReportControllerTest extends TestCase
 
         $this->assertSame('Pants', $rows[0][2]);
         $this->assertSame('Pants', $rows[1][2]);
+    }
+
+    private function createReportSale(User $owner, string $number, string $total, string $date): void
+    {
+        SalesTransaction::query()->create([
+            'transaction_no' => $number,
+            'sale_type' => 'walk_in',
+            'online_platform' => '',
+            'total_amount' => $total,
+            'payment_status' => 'paid',
+            'recorded_by' => $owner->id,
+            'transaction_date' => $date,
+        ]);
     }
 
     /**
