@@ -14,6 +14,7 @@
             ['label' => 'List best-selling products.', 'question' => 'List best-selling products'],
             ['label' => 'List recently collected products.', 'question' => 'List recently collected products'],
             ['label' => 'How many unpaid transactions?', 'question' => 'How many unpaid transactions?'],
+            ['label' => 'How many damaged item adjustments?', 'question' => 'How many damaged item adjustments?'],
             ['label' => 'Show the latest unpaid sale.', 'question' => 'Show the latest unpaid sale'],
         ];
         $starterPrompts = [
