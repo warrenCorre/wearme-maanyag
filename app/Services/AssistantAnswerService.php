@@ -124,7 +124,7 @@ class AssistantAnswerService
                 'status' => 'clarification',
                 'message' => $this->conversationService->reply('clarification', $topic) ?? match ($topic) {
                     'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
-                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, this month, or this year?',
+                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
                     'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
                     'latest_pending_sale_confirmation' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
                 },

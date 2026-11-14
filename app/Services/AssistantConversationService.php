@@ -71,9 +71,9 @@ class AssistantConversationService
                     'gentle' => 'Let’s narrow it down: sales totals, transaction counts, best sellers, or unpaid balances?',
                 ],
                 'sales_period' => [
-                    'warm' => 'Of course! For which period: today, yesterday, this week, this month, or this year?',
-                    'bright' => 'Let’s check your sales totals. Today, yesterday, this week, this month, or this year?',
-                    'gentle' => 'Which period would you like for sales totals: today, yesterday, this week, this month, or this year?',
+                    'warm' => 'Of course! For which period: today, yesterday, this week, last week, this month, last month, this year, or last year?',
+                    'bright' => 'Let’s check your sales totals. Today, yesterday, this week, last week, this month, last month, this year, or last year?',
+                    'gentle' => 'Which period would you like for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
                 ],
                 'unpaid_goal' => [
                     'warm' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',

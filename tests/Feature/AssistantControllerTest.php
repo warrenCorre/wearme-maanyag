@@ -349,7 +349,7 @@ class AssistantControllerTest extends TestCase
 
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Wahat about transaction counts?'])
             ->assertJsonPath('result.status', 'clarification')
-            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?');
     }
 
     public function test_owner_sees_labeled_local_general_chat_and_no_saved_chat_context(): void
@@ -720,7 +720,7 @@ class AssistantControllerTest extends TestCase
         $first->assertJsonPath('result.status', 'clarification')
             ->assertJsonMissingPath('result.visit_context');
         $second->assertJsonPath('result.status', 'clarification')
-            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?');
         $third->assertJsonPath('result.status', 'disabled');
         $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
             ->assertJsonPath('result.status', 'declined');
@@ -740,7 +740,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'clarification');
         $this->postJson(route('assistant.ask'), ['question' => "I'd like totals, please"])
             ->assertJsonPath('result.status', 'clarification')
-            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?')
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?')
             ->assertJsonMissingPath('result.visit_context');
     }
 
@@ -755,7 +755,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'clarification');
         $this->postJson(route('assistant.ask'), ['question' => "I'd like totals, please"])
             ->assertJsonPath('result.status', 'clarification')
-            ->assertJsonPath('result.message', 'Of course! For which period: today, yesterday, this week, this month, or this year?');
+            ->assertJsonPath('result.message', 'Of course! For which period: today, yesterday, this week, last week, this month, last month, this year, or last year?');
         $this->postJson(route('assistant.ask'), ['question' => 'Today, please'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded sales for daily on 2026-11-14: 0 transactions totaling PHP 0.')
@@ -1034,7 +1034,7 @@ class AssistantControllerTest extends TestCase
             ]]);
         $this->postJson(route('assistant.ask'), ['question' => 'Totals'])
             ->assertJsonPath('result.status', 'clarification')
-            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?');
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?');
     }
 
     public function test_a_pending_choice_cannot_survive_logout_or_cross_to_another_owner(): void

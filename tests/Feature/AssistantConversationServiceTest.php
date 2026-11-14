@@ -57,6 +57,26 @@ class AssistantConversationServiceTest extends TestCase
         $this->assertNull((new AssistantConversationService($client))->reply('social', 'hi private@example.test'));
     }
 
+    public function test_all_safe_sales_period_styles_list_the_previous_period_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            'warm' => 'Of course! For which period: today, yesterday, this week, last week, this month, last month, this year, or last year?',
+            'bright' => 'Let’s check your sales totals. Today, yesterday, this week, last week, this month, last month, this year, or last year?',
+            'gentle' => 'Which period would you like for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
+        ] as $style => $expected) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current safe topic: clarification / sales_period. Select a short, friendly style for this turn.')
+                ->andReturn(json_encode(['style' => $style, 'suggested_skill' => 'none']));
+
+            $this->assertSame($expected, (new AssistantConversationService($client))->reply('clarification', 'sales_period'));
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_untrusted_provider_replies_or_skill_suggestions_cannot_be_displayed(): void
     {
         config(['services.gemini.allow_conversation' => true]);
