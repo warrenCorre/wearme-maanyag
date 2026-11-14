@@ -54,6 +54,13 @@
                 </tr>
             </table>
 
+            @if (isset($chartImages[$period]))
+                <div class="chart-block">
+                    <p class="section-title">{{ ucfirst($period) }} Sales Graph (PHP)</p>
+                    <img src="data:image/png;base64,{{ $chartImages[$period] }}" alt="{{ ucfirst($period) }} sales by time bucket" width="520">
+                </div>
+            @endif
+
             <p class="section-title">Sales Breakdown</p>
 
             @if (empty($report['rows']))
