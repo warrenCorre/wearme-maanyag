@@ -88,6 +88,22 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_damaged_adjustment_totals_are_a_fixed_read_only_skill_with_no_free_form_filters(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-14');
+
+        foreach (['Summarize damaged item adjustments', 'Show me damaged-item adjustment totals', 'How many damaged item adjustments?'] as $question) {
+            $result = $policy->evaluate($question, $date);
+            $this->assertSame('damaged_adjustments', $result['intent'], $question);
+            $this->assertSame('Report only recorded damaged-item adjustment count and removed units without reasons or product details.', $result['safe_question']);
+        }
+
+        foreach (['Show damaged item reasons', 'How many damaged item adjustments for Synthetic Jacket?', 'Summarize damaged item adjustments for customer Ana', 'Delete damaged item adjustments', 'How many damaged item adjustments last month?'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

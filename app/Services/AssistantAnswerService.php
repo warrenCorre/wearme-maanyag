@@ -18,6 +18,7 @@ class AssistantAnswerService
         private AssistantResponseValidator $responseValidator,
         private AssistantConversationService $conversationService,
         private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
+        private AssistantDamagedAdjustmentService $damagedAdjustmentService,
         private AssistantSafeChatService $safeChatService,
         private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantModelIntentService $modelIntentService,
@@ -144,6 +145,20 @@ class AssistantAnswerService
             return [
                 'status' => 'disabled',
                 'message' => 'Assistant answers are disabled until sharing store data with Gemini is explicitly approved and enabled.',
+            ];
+        }
+
+        if ($decision['intent'] === 'damaged_adjustments') {
+            return [
+                'status' => 'answered',
+                'message' => $this->damagedAdjustmentService->answer(),
+                'sources' => [[
+                    'type' => 'inventory_adjustments',
+                    'label' => 'Recorded damaged-item adjustments',
+                    'as_of' => $decision['date'],
+                ]],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
             ];
         }
 

@@ -137,6 +137,19 @@ class AssistantQuestionPolicy
             );
         }
 
+        if (in_array($normalizedQuestion, [
+            'summarize damaged item adjustments',
+            'show me damaged item adjustment totals',
+            'how many damaged item adjustments',
+        ], true)) {
+            return $this->allowed(
+                'damaged_adjustments',
+                null,
+                $date,
+                'Report only recorded damaged-item adjustment count and removed units without reasons or product details.',
+            );
+        }
+
         if (preg_match('/^(?:(?:show|list|give|summarize)\s+(?:me\s+)?|what\s+(?:are|is)\s+)?(?:the\s+)?(?:best(?: selling)? products?|top(?: selling)? products?|best sellers|top sellers)$/', $normalizedQuestion) === 1) {
             return $this->allowed(
                 'best_sellers',

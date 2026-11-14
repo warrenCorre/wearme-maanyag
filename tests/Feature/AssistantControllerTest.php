@@ -850,6 +850,32 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_damaged_adjustment_totals_are_owner_only_and_do_not_bypass_sharing_or_call_a_provider(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        config(['services.gemini.allow_store_data' => false]);
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments?'])
+            ->assertJsonPath('result.status', 'disabled');
+
+        config(['services.gemini.allow_store_data' => true]);
+        $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (all time). Reasons and product details are not shown.')
+            ->assertJsonPath('result.sources.0.type', 'inventory_adjustments')
+            ->assertJsonMissingPath('result.visit_context');
+
+        $this->actingAs($this->createUser('cashier'))->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments?'])
+            ->assertForbidden();
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_use_screened_prior_month_conversational_sales_with_the_fixed_local_fake(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));
