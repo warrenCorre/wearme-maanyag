@@ -155,6 +155,34 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_monthly_report_includes_leap_day_without_adjacent_months(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-JANUARY', '10.00', '2024-01-31 23:59:59'],
+            ['SYN-FEBRUARY-START', '40.00', '2024-02-01 00:00:00'],
+            ['SYN-LEAP-DAY', '60.00', '2024-02-29 23:59:59'],
+            ['SYN-MARCH', '20.00', '2024-03-01 00:00:00'],
+        ] as [$number, $total, $date]) {
+            $this->createReportSale($owner, $number, $total, $date);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'monthly', 'date' => '2024-02-14',
+        ]));
+
+        $response->assertOk();
+        $this->assertSame(['transaction_count' => 2, 'total_sales' => 100.0, 'average_sale' => 50.0], $response['report']['summary']);
+        $this->assertCount(29, $response['report']['chart']['labels']);
+        $this->assertSame(40.0, $response['report']['chart']['totals'][0]);
+        $this->assertSame(60.0, $response['report']['chart']['totals'][28]);
+        $this->assertSame([
+            ['label' => 'Feb 1', 'transactions' => 1, 'total' => 40.0],
+            ['label' => 'Feb 29', 'transactions' => 1, 'total' => 60.0],
+        ], $response['report']['rows']);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
