@@ -210,6 +210,34 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_daily_report_without_sales_has_zero_totals_and_an_empty_breakdown(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'daily', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk()->assertSee('No sales recorded for this period.');
+        $this->assertSame(['transaction_count' => 0, 'total_sales' => 0.0, 'average_sale' => 0.0], $response['report']['summary']);
+        $this->assertSame([], $response['report']['rows']);
+        $this->assertSame(array_fill(0, 24, 0.0), $response['report']['chart']['totals']);
+    }
+
+    public function test_yearly_report_without_sales_has_twelve_zero_buckets(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'yearly', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk()->assertSee('No sales recorded for this period.');
+        $this->assertSame(['transaction_count' => 0, 'total_sales' => 0.0, 'average_sale' => 0.0], $response['report']['summary']);
+        $this->assertSame([], $response['report']['rows']);
+        $this->assertSame(array_fill(0, 12, 0.0), $response['report']['chart']['totals']);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
