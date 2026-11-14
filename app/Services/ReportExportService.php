@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exports\InventoryReportExport;
 use App\Exports\SalesReportExport;
+use App\Models\Product;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
 use Maatwebsite\Excel\Facades\Excel;
@@ -35,17 +36,20 @@ class ReportExportService
     public function inventoryReport(string $format): Response
     {
         $products = $this->reportService->inventoryProducts();
+        $lowStockProducts = $products->filter(fn (Product $product): bool => $product->quantity <= $product->low_stock_threshold)->values();
+        $stats = $this->reportService->inventoryStats();
         $filename = 'inventory-report-'.now()->toDateString();
 
         if ($format === 'pdf') {
             return Pdf::loadView('reports.exports.inventory', [
                 'products' => $products,
+                'lowStockProducts' => $lowStockProducts,
                 'adjustments' => $this->reportService->inventoryAdjustments(),
-                'stats' => $this->reportService->inventoryStats(),
-                'lowStockCount' => $this->reportService->lowStockCount(),
+                'stats' => $stats,
+                'lowStockCount' => $lowStockProducts->count(),
             ])->download($filename.'.pdf');
         }
 
-        return Excel::download(new InventoryReportExport($products, $this->reportService->lazyInventoryAdjustments()), $filename.'.xlsx');
+        return Excel::download(new InventoryReportExport($products, $this->reportService->lazyInventoryAdjustments(), $stats), $filename.'.xlsx');
     }
 }

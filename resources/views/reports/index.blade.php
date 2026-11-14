@@ -154,8 +154,8 @@
                     <p class="mt-1 text-sm font-medium text-slate-500">Full inventory list with reorder levels.</p>
                 </div>
                 <div class="flex gap-2">
-                    <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-500 hover:text-white" href="{{ route('reports.inventory.export', ['format' => 'pdf']) }}">Export PDF</a>
-                    <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-500 hover:text-white" href="{{ route('reports.inventory.export', ['format' => 'excel']) }}">Export Excel</a>
+                    <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-500 hover:text-white" href="{{ route('reports.inventory.export', ['format' => 'pdf']) }}">Export Complete PDF</a>
+                    <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-500 hover:text-white" href="{{ route('reports.inventory.export', ['format' => 'excel']) }}">Export Complete Excel</a>
                     <a class="rounded-xl border-2 border-slate-900 bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-rose-500" href="{{ route('products.index') }}">Manage Products</a>
                 </div>
             </div>

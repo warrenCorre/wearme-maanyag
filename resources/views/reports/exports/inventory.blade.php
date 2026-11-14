@@ -25,7 +25,7 @@
 
     <p class="context-line">
         <span class="label">Scope</span><br>
-        All active products with reorder levels and all non-sales stock adjustments
+        Complete inventory: stock overview, low-stock details, active products, and all non-sales adjustments
     </p>
 
     <table class="cards" cellspacing="8" cellpadding="0">
@@ -49,6 +49,37 @@
             </td>
         </tr>
     </table>
+
+    <p class="section-title">Low-Stock Details</p>
+
+    @if ($lowStockProducts->isEmpty())
+        <div class="note">No low-stock products.</div>
+    @else
+        <table class="report" cellpadding="0" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Product</th>
+                    <th>Category</th>
+                    <th>Collection Date</th>
+                    <th class="num">Quantity</th>
+                    <th class="num">Reorder At</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($lowStockProducts as $product)
+                    <tr class="{{ $loop->index % 2 === 1 ? 'alt' : '' }}">
+                        <td>{{ $product->product_code }}</td>
+                        <td>{{ $product->product_name }}</td>
+                        <td>{{ $product->category?->category_name ?? 'Uncategorized' }}</td>
+                        <td>{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
+                        <td class="num">{{ $product->quantity }}</td>
+                        <td class="num">{{ $product->low_stock_threshold }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
 
     <p class="section-title">All Active Products</p>
 
