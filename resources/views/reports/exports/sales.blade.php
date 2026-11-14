@@ -38,7 +38,7 @@
             <td width="33%">
                 <p class="card-label">Transactions</p>
                 <p class="card-value">{{ $report['summary']['transaction_count'] }}</p>
-                <p class="card-note">completed sales</p>
+                <p class="card-note">recorded sales</p>
             </td>
             <td width="34%">
                 <p class="card-label">Average Sale</p>

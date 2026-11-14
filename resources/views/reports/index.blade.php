@@ -63,7 +63,7 @@
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
                 <p class="text-sm font-black uppercase tracking-wide text-rose-500">Transactions</p>
                 <p class="mt-3 text-3xl font-black tabular-nums">{{ $report['summary']['transaction_count'] }}</p>
-                <p class="mt-2 text-sm font-medium text-slate-500">completed sale{{ $report['summary']['transaction_count'] === 1 ? '' : 's' }}</p>
+                <p class="mt-2 text-sm font-medium text-slate-500">recorded sale{{ $report['summary']['transaction_count'] === 1 ? '' : 's' }}</p>
             </div>
 
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
@@ -183,7 +183,7 @@
                                 <tr class="{{ $isLowStock ? 'bg-amber-50' : '' }}">
                                     <td class="py-3 pr-4 font-bold tabular-nums text-slate-900">{{ $product->product_code }}</td>
                                     <td class="py-3 pr-4 font-bold text-slate-900">{{ $product->product_name }}</td>
-                                    <td class="py-3 pr-4 font-medium text-slate-600">{{ $product->category?->name ?? 'Uncategorized' }}</td>
+                                    <td class="py-3 pr-4 font-medium text-slate-600">{{ $product->category?->category_name ?? 'Uncategorized' }}</td>
                                     <td class="py-3 pr-4 font-medium tabular-nums text-slate-600">{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                                     <td class="py-3 pr-4 text-right font-semibold tabular-nums text-slate-700">{{ Number::currency($product->price, 'PHP') }}</td>
                                     <td class="py-3 pr-4 text-right font-black tabular-nums text-slate-900">{{ $product->quantity }}</td>
@@ -195,6 +195,43 @@
                                             <span class="rounded-xl border-2 border-emerald-700 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">OK</span>
                                         @endif
                                     </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </section>
+        <section class="mt-5 rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
+            <h2 class="text-sm font-black uppercase tracking-wide text-rose-500">Stock Adjustment History</h2>
+            <p class="mt-1 text-sm font-medium text-slate-500">All non-sales stock changes, including adjustments to archived products.</p>
+
+            @if ($adjustments->isEmpty())
+                <p class="mt-6 rounded-xl bg-slate-50 p-4 text-sm font-medium text-slate-500">No non-sales stock adjustments recorded yet.</p>
+            @else
+                <div class="mt-4 overflow-x-auto">
+                    <table class="w-full min-w-[800px] text-left text-sm">
+                        <thead class="border-b-2 border-slate-900 text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                                <th class="px-3 py-3">Recorded</th>
+                                <th class="px-3 py-3">Product</th>
+                                <th class="px-3 py-3">Change</th>
+                                <th class="px-3 py-3">Before</th>
+                                <th class="px-3 py-3">After</th>
+                                <th class="px-3 py-3">Reason</th>
+                                <th class="px-3 py-3">Owner</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach ($adjustments as $adjustment)
+                                <tr>
+                                    <td class="px-3 py-4 text-slate-600">{{ $adjustment->created_at->format('M d, Y g:i A') }}</td>
+                                    <td class="px-3 py-4 font-bold text-slate-900">{{ $adjustment->product?->product_name ?? 'Unknown product' }}</td>
+                                    <td class="px-3 py-4 font-black {{ $adjustment->direction === 'increase' ? 'text-emerald-700' : 'text-rose-700' }}">{{ $adjustment->direction === 'increase' ? '+' : '-' }}{{ $adjustment->quantity }}</td>
+                                    <td class="px-3 py-4 text-slate-600">{{ $adjustment->quantity_before }}</td>
+                                    <td class="px-3 py-4 text-slate-600">{{ $adjustment->quantity_after }}</td>
+                                    <td class="px-3 py-4 font-medium text-slate-700">{{ $adjustment->reason }}</td>
+                                    <td class="px-3 py-4 text-slate-600">{{ $adjustment->adjustedBy?->name ?? 'Unknown owner' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

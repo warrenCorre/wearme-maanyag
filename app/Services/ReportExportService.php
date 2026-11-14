@@ -49,11 +49,12 @@ class ReportExportService
         if ($format === 'pdf') {
             return Pdf::loadView('reports.exports.inventory', [
                 'products' => $products,
+                'adjustments' => $this->reportService->inventoryAdjustments(),
                 'stats' => $this->reportService->inventoryStats(),
                 'lowStockCount' => $this->reportService->lowStockCount(),
             ])->download($filename.'.pdf');
         }
 
-        return Excel::download(new InventoryReportExport($products), $filename.'.xlsx');
+        return Excel::download(new InventoryReportExport($products, $this->reportService->inventoryAdjustments()), $filename.'.xlsx');
     }
 }
