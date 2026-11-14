@@ -17,7 +17,7 @@ class AssistantModelIntentService
                 'none', 'sales_goal', 'sales_period', 'sales_summary', 'inventory_summary',
                 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_goal', 'unpaid_summary',
             ]],
-            'period' => ['type' => 'string', 'enum' => ['none', 'today', 'yesterday', 'this week', 'this month', 'this year']],
+            'period' => ['type' => 'string', 'enum' => ['none', 'today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year']],
         ],
         'required' => ['intent', 'period'],
     ];

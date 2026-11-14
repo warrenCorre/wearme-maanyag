@@ -20,8 +20,16 @@ class FakeGeminiClient extends GeminiClient
             return '{"style":"warm","suggested_skill":"none"}';
         }
 
+        if (isset($responseSchema['properties']['intent'])
+            && $prompt === 'Current screened store turn: could we talk about how our sales are doing last month'
+            && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
+            && in_array('sales_summary', $responseSchema['properties']['intent']['enum'] ?? [], true)
+            && in_array('last month', $responseSchema['properties']['period']['enum'] ?? [], true)) {
+            return '{"intent":"sales_summary","period":"last month"}';
+        }
+
         if (! isset($responseSchema['properties']['answer'])) {
-            throw new RuntimeException('The DEMO fake supports only sales answers and clarification styles.');
+            throw new RuntimeException('The DEMO fake supports only sales answers, clarification styles, and one screened sales classifier turn.');
         }
 
         $prefix = "Verified system context (JSON):\n";
