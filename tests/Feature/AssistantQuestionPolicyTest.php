@@ -214,6 +214,15 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_unsupported_question_help_mentions_only_safe_adjustment_totals(): void
+    {
+        $decision = app(AssistantQuestionPolicy::class)->evaluate('What is the weather?', CarbonImmutable::parse('2026-11-14'));
+
+        $this->assertFalse($decision['allowed']);
+        $this->assertStringContainsString('aggregate stock-adjustment or damaged-item totals', $decision['reason']);
+        $this->assertStringNotContainsString('reasons', $decision['reason']);
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

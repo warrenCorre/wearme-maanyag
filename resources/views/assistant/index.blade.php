@@ -127,7 +127,7 @@
                     <div id="assistant-welcome" class="flex flex-1 flex-col items-center justify-center text-center">
                         <span class="flex h-16 w-16 items-center justify-center rounded-3xl border-2 border-slate-900 bg-rose-100 text-3xl text-rose-600 shadow-[4px_4px_0_0_#0f172a]" aria-hidden="true">◌</span>
                         <h3 class="mt-6 text-2xl font-black tracking-tight text-slate-900">Hi! How can I help you today?</h3>
-                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Say hi, or ask about sales, inventory, best sellers, collection dates, or unpaid balances. I can clarify what you need.</p>
+                        <p class="mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-600">Say hi, or ask about sales, inventory, best sellers, collection dates, unpaid balances, or aggregate stock-adjustment or damaged-item totals. I can clarify what you need.</p>
                         <div class="mt-6 flex flex-wrap justify-center gap-2">
                             @foreach ($starterPrompts as $starterPrompt)
                                 <form method="POST" action="{{ route('assistant.ask') }}" data-assistant-question-form>

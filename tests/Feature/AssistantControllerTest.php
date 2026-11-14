@@ -464,6 +464,8 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('value="Summarize stock adjustments"', false);
         $response->assertSee('Summarize stock adjustments this month.');
         $response->assertSee('value="Summarize stock adjustments this month"', false);
+        $response->assertSee('aggregate stock-adjustment or damaged-item totals');
+        $response->assertSee('read-only stock-adjustment totals');
         $response->assertSee('value="List recently collected products"', false);
         $response->assertSee('Check Inventory');
         $response->assertSee('Sales Insights');

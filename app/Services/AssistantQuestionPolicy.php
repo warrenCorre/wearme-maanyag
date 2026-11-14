@@ -279,7 +279,7 @@ class AssistantQuestionPolicy
             return $this->generalChat($date, $chatTurn);
         }
 
-        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.', true);
+        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, aggregate unpaid, or aggregate stock-adjustment or damaged-item totals question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.', true);
     }
 
     private function withoutSocialOpening(string $question): string
