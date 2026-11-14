@@ -29,6 +29,7 @@ class AssistantStoreTurnScreen
         }
 
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
+        $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
         $words = explode(' ', $turn);
         $corrected = false;
 

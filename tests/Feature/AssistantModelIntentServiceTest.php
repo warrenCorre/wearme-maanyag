@@ -73,6 +73,17 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertNull($this->service($client)->suggest('Could we talk about how our sales are doing last month?'));
     }
 
+    public function test_prior_month_conversational_wording_is_screened_to_the_existing_last_month_choice(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: could we talk about how our sales are doing last month')
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggest('Could we talk about how our sales are doing prior month?'));
+    }
+
     public function test_suggested_skills_are_limited_by_the_screened_topic_and_request_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);
