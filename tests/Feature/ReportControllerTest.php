@@ -238,6 +238,55 @@ class ReportControllerTest extends TestCase
         $this->assertSame(array_fill(0, 12, 0.0), $response['report']['chart']['totals']);
     }
 
+    public function test_guest_cannot_view_or_download_reports(): void
+    {
+        foreach ([
+            route('reports.index'),
+            route('reports.sales.export', ['format' => 'pdf']),
+            route('reports.inventory.export', ['format' => 'excel']),
+        ] as $url) {
+            $this->get($url)->assertRedirect(route('login'));
+        }
+    }
+
+    public function test_cashier_cannot_view_or_download_owner_reports(): void
+    {
+        $cashier = User::query()->create([
+            'name' => 'Synthetic Cashier',
+            'email' => 'report-cashier@example.test',
+            'password' => 'synthetic-password',
+            'phone' => '0000000000',
+            'address' => 'Synthetic address',
+            'role' => 'cashier',
+            'profile_image' => '',
+            'status' => 'active',
+        ]);
+
+        foreach ([
+            route('reports.index'),
+            route('reports.sales.export', ['format' => 'pdf']),
+            route('reports.inventory.export', ['format' => 'excel']),
+        ] as $url) {
+            $this->actingAs($cashier)->get($url)->assertForbidden();
+        }
+    }
+
+    public function test_reports_reject_invalid_period_date_and_export_formats(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $this->actingAs($owner)->get(route('reports.index', ['period' => 'decade']))
+            ->assertSessionHasErrors('period');
+        $this->get(route('reports.index', ['date' => 'not-a-date']))
+            ->assertSessionHasErrors('date');
+        $this->get(route('reports.sales.export', ['period' => 'weekly', 'format' => 'csv']))
+            ->assertSessionHasErrors('format');
+        $this->get(route('reports.inventory.export', ['format' => 'csv']))
+            ->assertSessionHasErrors('format');
+        $this->get(route('reports.inventory.export'))
+            ->assertSessionHasErrors('format');
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
