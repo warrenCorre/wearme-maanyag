@@ -18,7 +18,7 @@
             </td>
             <td width="35%" class="header-meta">
                 Generated<br>
-                {{ now()->format('M j, Y &#8226; H:i') }}
+                {{ now()->format('M j, Y • H:i') }}
             </td>
         </tr>
     </table>

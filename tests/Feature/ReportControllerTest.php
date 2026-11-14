@@ -437,6 +437,34 @@ class ReportControllerTest extends TestCase
         $this->assertStringContainsString('These periods overlap; do not add their totals together.', $html);
     }
 
+    public function test_pdf_export_headers_show_a_readable_generation_timestamp(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 10:15:00'));
+        $report = [
+            'start' => CarbonImmutable::parse('2026-11-14'),
+            'end' => CarbonImmutable::parse('2026-11-14 23:59:59'),
+            'summary' => ['transaction_count' => 0, 'total_sales' => 0.0, 'average_sale' => 0.0],
+            'rows' => [],
+        ];
+
+        $salesHtml = view('reports.exports.sales', [
+            'reports' => array_fill_keys(['daily', 'weekly', 'monthly', 'yearly'], $report),
+            'date' => '2026-11-14',
+        ])->render();
+        $inventoryHtml = view('reports.exports.inventory', [
+            'products' => collect(),
+            'lowStockProducts' => collect(),
+            'adjustments' => collect(),
+            'stats' => ['product_count' => 0, 'total_units' => 0, 'stock_value' => 0],
+            'lowStockCount' => 0,
+        ])->render();
+
+        foreach ([$salesHtml, $inventoryHtml] as $html) {
+            $this->assertStringContainsString('Nov 14, 2026 • 10:15', $html);
+            $this->assertStringNotContainsString('&amp;#8226;', $html);
+        }
+    }
+
     public function test_sales_exports_include_all_four_periods_for_one_reference_date(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
