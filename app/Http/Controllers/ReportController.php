@@ -27,6 +27,7 @@ class ReportController extends Controller
             'date' => $date->toDateString(),
             'report' => $reportService->salesReport($period, $date),
             'products' => $reportService->inventoryProducts(),
+            'adjustments' => $reportService->inventoryAdjustments(),
             'inventoryStats' => $reportService->inventoryStats(),
             'lowStockCount' => $reportService->lowStockCount(),
         ]);

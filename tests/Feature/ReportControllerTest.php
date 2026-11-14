@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Exports\InventoryReportExport;
 use App\Models\Category;
+use App\Models\InventoryAdjustment;
 use App\Models\Product;
 use App\Models\SalesTransaction;
 use App\Models\User;
@@ -287,6 +288,36 @@ class ReportControllerTest extends TestCase
             ->assertSessionHasErrors('format');
     }
 
+    public function test_inventory_report_shows_non_sales_adjustments_for_archived_products_safely(): void
+    {
+        [$owner, $activeProduct, $archivedProduct] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($activeProduct, $owner, 'increase', 1, 2, 3, 'Synthetic restock');
+        $this->createReportAdjustment($archivedProduct, $owner, 'decrease', 1, 2, 1, '<script>alert("demo")</script> archived item');
+        $archivedProduct->update(['status' => 'archived']);
+        $archivedProduct->delete();
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'monthly', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk()
+            ->assertSee('Stock Adjustment History')
+            ->assertSee('Synthetic restock')
+            ->assertSee('&lt;script&gt;', false)
+            ->assertDontSee('<script>alert("demo")</script>', false);
+        $this->assertCount(2, $response['adjustments']);
+        $this->assertSame($archivedProduct->id, $response['adjustments'][0]->product->id);
+    }
+
+    public function test_inventory_report_shows_an_empty_adjustment_history_message(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'monthly', 'date' => '2026-11-14',
+        ]))->assertOk()->assertSee('No non-sales stock adjustments recorded yet.');
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
@@ -403,6 +434,19 @@ class ReportControllerTest extends TestCase
             'payment_status' => 'paid',
             'recorded_by' => $owner->id,
             'transaction_date' => $date,
+        ]);
+    }
+
+    private function createReportAdjustment(Product $product, User $owner, string $direction, int $quantity, int $before, int $after, string $reason): void
+    {
+        InventoryAdjustment::query()->create([
+            'product_id' => $product->id,
+            'adjusted_by' => $owner->id,
+            'direction' => $direction,
+            'quantity' => $quantity,
+            'quantity_before' => $before,
+            'quantity_after' => $after,
+            'reason' => $reason,
         ]);
     }
 

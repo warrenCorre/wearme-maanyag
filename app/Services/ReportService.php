@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\InventoryAdjustment;
 use App\Models\Product;
 use App\Models\SalesTransaction;
 use Carbon\CarbonImmutable;
@@ -45,6 +46,14 @@ class ReportService
         return Product::with('category')
             ->where('status', 'active')
             ->orderBy('product_name')
+            ->get();
+    }
+
+    public function inventoryAdjustments(): Collection
+    {
+        return InventoryAdjustment::with(['product', 'adjustedBy'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get();
     }
 

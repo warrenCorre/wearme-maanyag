@@ -32,11 +32,11 @@ class InventoryAdjustment extends Model
 
     public function product(): BelongsTo
     {
-        return $this->belongsTo(Product::class, 'product_id');
+        return $this->belongsTo(Product::class, 'product_id')->withTrashed();
     }
 
     public function adjustedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'adjusted_by');
+        return $this->belongsTo(User::class, 'adjusted_by')->withTrashed();
     }
 }
