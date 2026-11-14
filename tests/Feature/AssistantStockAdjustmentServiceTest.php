@@ -122,5 +122,13 @@ class AssistantStockAdjustmentServiceTest extends TestCase
             'Recorded non-sales stock adjustments (during 2025): 2 increases (9 units added), 1 decrease (3 units removed). Reasons and product details are not shown.',
             $service->answer('yearly', CarbonImmutable::parse('2025-12-31')),
         );
+        $this->assertSame(
+            'Recorded non-sales stock adjustments (during January 1, 2026): 1 increase (4 units added), 0 decreases (0 units removed). Reasons and product details are not shown.',
+            $service->answer('daily', CarbonImmutable::parse('2026-01-01')),
+        );
+        $this->assertSame(
+            'Recorded non-sales stock adjustments (during December 31, 2025): 0 increases (0 units added), 1 decrease (3 units removed). Reasons and product details are not shown.',
+            $service->answer('daily', CarbonImmutable::parse('2025-12-31')),
+        );
     }
 }

@@ -122,7 +122,7 @@ class AssistantQuestionPolicyTest extends TestCase
             $this->assertStringNotContainsString($question, $result['safe_question'], $question);
         }
 
-        foreach (['How many damaged item adjustments this month and last month?', 'How many damaged item adjustments yesterday?', 'How many damaged item adjustments last month for Synthetic Jacket?', 'Show damaged item reasons this month'] as $question) {
+        foreach (['How many damaged item adjustments this month and last month?', 'How many damaged item adjustments two days ago?', 'How many damaged item adjustments last month for Synthetic Jacket?', 'Show damaged item reasons this month'] as $question) {
             $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
         }
     }
@@ -161,7 +161,7 @@ class AssistantQuestionPolicyTest extends TestCase
             $this->assertStringNotContainsString($question, $decision['safe_question'], $question);
         }
 
-        foreach (['Summarize stock adjustments this month and last month', 'How many stock adjustments yesterday?', 'Summarize stock adjustments last month for Synthetic Jacket', 'Show stock adjustment reasons this month'] as $question) {
+        foreach (['Summarize stock adjustments this month and last month', 'How many stock adjustments two days ago?', 'Summarize stock adjustments last month for Synthetic Jacket', 'Show stock adjustment reasons this month'] as $question) {
             $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
         }
     }
@@ -250,6 +250,31 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('weekly', $policy->evaluate('Last week', $date, ['intent' => 'stock_adjustments'])['period']);
         $this->assertSame('2025-01-01', $policy->evaluate('What about last year?', $date, ['intent' => 'damaged_adjustments'])['date']);
         $this->assertFalse($policy->evaluate('Last year', $date)['allowed']);
+    }
+
+    public function test_adjustment_today_and_yesterday_questions_use_the_recorded_calendar_day(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach ([
+            ['Summarize stock adjustments today', 'stock_adjustments', '2026-01-01'],
+            ['Summarize stock adjustments for yesterday', 'stock_adjustments', '2025-12-31'],
+            ['How many damaged item adjustments were there today?', 'damaged_adjustments', '2026-01-01'],
+            ['How many damaged item adjustments yesterday?', 'damaged_adjustments', '2025-12-31'],
+        ] as [$question, $intent, $expectedDate]) {
+            $decision = $policy->evaluate($question, $date);
+            $this->assertSame($intent, $decision['intent'], $question);
+            $this->assertSame('daily', $decision['period'], $question);
+            $this->assertSame($expectedDate, $decision['date'], $question);
+        }
+
+        $this->assertSame('2025-12-31', $policy->evaluate('Yesterday', $date, ['intent' => 'stock_adjustments'])['date']);
+        $this->assertFalse($policy->evaluate('Yesterday', $date)['allowed']);
+
+        foreach (['Summarize stock adjustments today and yesterday', 'How many damaged item adjustments today for Synthetic Jacket?', 'Show stock adjustment reasons yesterday'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
     }
 
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void

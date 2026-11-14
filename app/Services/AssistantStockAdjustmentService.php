@@ -13,14 +13,16 @@ class AssistantStockAdjustmentService
         $query = InventoryAdjustment::query();
         $scope = 'all time';
 
-        if (in_array($period, ['monthly', 'weekly', 'yearly'], true)) {
+        if (in_array($period, ['daily', 'monthly', 'weekly', 'yearly'], true)) {
             $date = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::today());
             $start = match ($period) {
+                'daily' => $date->startOfDay(),
                 'weekly' => $date->startOfWeek(CarbonImmutable::MONDAY),
                 'yearly' => $date->startOfYear(),
                 default => $date->startOfMonth(),
             };
             $end = match ($period) {
+                'daily' => $start->addDay(),
                 'weekly' => $start->addWeek(),
                 'yearly' => $start->addYear(),
                 default => $start->addMonth(),
@@ -28,6 +30,7 @@ class AssistantStockAdjustmentService
             $query->where('created_at', '>=', $start)
                 ->where('created_at', '<', $end);
             $scope = match ($period) {
+                'daily' => 'during '.$start->format('F j, Y'),
                 'weekly' => 'during week of '.$start->format('F j, Y'),
                 'yearly' => 'during '.$start->year,
                 default => 'during '.$date->format('F Y'),

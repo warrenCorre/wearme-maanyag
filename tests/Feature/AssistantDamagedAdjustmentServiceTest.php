@@ -149,5 +149,17 @@ class AssistantDamagedAdjustmentServiceTest extends TestCase
             'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during 2025). Reasons and product details are not shown.',
             $service->answer('yearly', CarbonImmutable::parse('2025-12-31')),
         );
+        $this->assertSame(
+            'Recorded damaged-item adjustments: 1 decrease, 2 units removed (during November 1, 2026). Reasons and product details are not shown.',
+            $service->answer('daily', CarbonImmutable::parse('2026-11-01')),
+        );
+        $this->assertSame(
+            'Recorded damaged-item adjustments: 1 decrease, 1 unit removed (during October 31, 2026). Reasons and product details are not shown.',
+            $service->answer('daily', CarbonImmutable::parse('2026-10-31')),
+        );
+        $this->assertSame(
+            'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during November 14, 2026). Reasons and product details are not shown.',
+            $service->answer('daily', CarbonImmutable::parse('2026-11-14')),
+        );
     }
 }

@@ -81,7 +81,7 @@ class AssistantQuestionPolicy
         }
 
         if ($pending === null && in_array($visitContext['intent'] ?? null, ['damaged_adjustments', 'stock_adjustments'], true)
-            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
             $question = $visitContext['intent'] === 'damaged_adjustments'
                 ? 'How many damaged item adjustments '.$matches[1]
                 : 'Summarize stock adjustments '.$matches[1];
@@ -159,14 +159,16 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
             $date = match ($matches[1]) {
+                'yesterday' => $date->subDay(),
                 'last month' => $date->subMonthNoOverflow(),
                 'last week' => $date->subWeek(),
                 'last year' => $date->subYearNoOverflow(),
                 default => $date,
             };
             $period = match (true) {
+                in_array($matches[1], ['today', 'yesterday'], true) => 'daily',
                 str_ends_with($matches[1], 'week') => 'weekly',
                 str_ends_with($matches[1], 'year') => 'yearly',
                 default => 'monthly',
@@ -193,14 +195,16 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
             $date = match ($matches[1]) {
+                'yesterday' => $date->subDay(),
                 'last month' => $date->subMonthNoOverflow(),
                 'last week' => $date->subWeek(),
                 'last year' => $date->subYearNoOverflow(),
                 default => $date,
             };
             $period = match (true) {
+                in_array($matches[1], ['today', 'yesterday'], true) => 'daily',
                 str_ends_with($matches[1], 'week') => 'weekly',
                 str_ends_with($matches[1], 'year') => 'yearly',
                 default => 'monthly',
