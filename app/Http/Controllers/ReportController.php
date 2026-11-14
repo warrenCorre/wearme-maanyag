@@ -39,15 +39,13 @@ class ReportController extends Controller
     public function exportSales(Request $request, ReportExportService $exportService): Response
     {
         $validated = $request->validate([
-            'period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly', 'yearly'])],
             'date' => ['nullable', 'date'],
             'format' => ['required', Rule::in(['pdf', 'excel'])],
         ]);
 
-        $period = $validated['period'] ?? 'daily';
         $date = CarbonImmutable::parse($validated['date'] ?? now());
 
-        return $exportService->salesReport($period, $date, $validated['format']);
+        return $exportService->salesReport($date, $validated['format']);
     }
 
     public function exportInventory(Request $request, ReportExportService $exportService): Response

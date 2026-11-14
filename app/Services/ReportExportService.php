@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exports\InventoryReportExport;
 use App\Exports\SalesReportExport;
+use App\Models\Product;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonInterface;
 use Maatwebsite\Excel\Facades\Excel;
@@ -13,48 +14,42 @@ class ReportExportService
 {
     public function __construct(private ReportService $reportService) {}
 
-    public function salesReport(string $period, CarbonInterface $date, string $format): Response
+    public function salesReport(CarbonInterface $date, string $format): Response
     {
-        $report = $this->reportService->salesReport($period, $date);
-        $filename = sprintf('sales-report-%s-%s', $period, $date->toDateString());
+        $reports = [];
+        foreach (['daily', 'weekly', 'monthly', 'yearly'] as $period) {
+            $reports[$period] = $this->reportService->salesReport($period, $date);
+        }
+
+        $filename = 'sales-report-all-periods-'.$date->toDateString();
 
         if ($format === 'pdf') {
             return Pdf::loadView('reports.exports.sales', [
-                'report' => $report,
-                'period' => $period,
-                'rangeLabel' => $report['start']->format('M j, Y').($period === 'daily' ? '' : ' - '.$report['end']->format('M j, Y')),
+                'reports' => $reports,
+                'date' => $date->toDateString(),
             ])->download($filename.'.pdf');
         }
 
-        $rows = collect($report['rows'])->map(fn (array $row) => [
-            $row['label'],
-            $row['transactions'],
-            $row['total'],
-        ]);
-
-        $rows->push([
-            'TOTAL',
-            $report['summary']['transaction_count'],
-            $report['summary']['total_sales'],
-        ]);
-
-        return Excel::download(new SalesReportExport($rows->all()), $filename.'.xlsx');
+        return Excel::download(new SalesReportExport($reports, $date->toDateString()), $filename.'.xlsx');
     }
 
     public function inventoryReport(string $format): Response
     {
         $products = $this->reportService->inventoryProducts();
+        $lowStockProducts = $products->filter(fn (Product $product): bool => $product->quantity <= $product->low_stock_threshold)->values();
+        $stats = $this->reportService->inventoryStats();
         $filename = 'inventory-report-'.now()->toDateString();
 
         if ($format === 'pdf') {
             return Pdf::loadView('reports.exports.inventory', [
                 'products' => $products,
+                'lowStockProducts' => $lowStockProducts,
                 'adjustments' => $this->reportService->inventoryAdjustments(),
-                'stats' => $this->reportService->inventoryStats(),
-                'lowStockCount' => $this->reportService->lowStockCount(),
+                'stats' => $stats,
+                'lowStockCount' => $lowStockProducts->count(),
             ])->download($filename.'.pdf');
         }
 
-        return Excel::download(new InventoryReportExport($products, $this->reportService->lazyInventoryAdjustments()), $filename.'.xlsx');
+        return Excel::download(new InventoryReportExport($products, $this->reportService->lazyInventoryAdjustments(), $stats), $filename.'.xlsx');
     }
 }
