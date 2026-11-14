@@ -50,6 +50,14 @@
         </tr>
     </table>
 
+    @if (isset($stockChartImage))
+        <div class="chart-block">
+            <p class="section-title">Top 10 Active Products by Units in Stock</p>
+            <p>Graph shows up to 10 active products; the tables below include the full inventory.</p>
+            <img src="data:image/png;base64,{{ $stockChartImage }}" alt="Top 10 active products by units in stock" width="520">
+        </div>
+    @endif
+
     <p class="section-title">Low-Stock Details</p>
 
     @if ($lowStockProducts->isEmpty())

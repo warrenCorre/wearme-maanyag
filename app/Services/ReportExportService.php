@@ -47,12 +47,15 @@ class ReportExportService
         $filename = 'inventory-report-'.now()->toDateString();
 
         if ($format === 'pdf') {
+            $topStockProducts = ReportChartImage::topStockProducts($products);
+
             return Pdf::loadView('reports.exports.inventory', [
                 'products' => $products,
                 'lowStockProducts' => $lowStockProducts,
                 'adjustments' => $this->reportService->inventoryAdjustments(),
                 'stats' => $stats,
                 'lowStockCount' => $lowStockProducts->count(),
+                'stockChartImage' => $this->chartImage->stockBars($topStockProducts),
             ])->download($filename.'.pdf');
         }
 
