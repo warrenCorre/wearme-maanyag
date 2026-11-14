@@ -25,7 +25,7 @@
 
     <p class="context-line">
         <span class="label">Scope</span><br>
-        All active products with reorder levels
+        All active products with reorder levels and all non-sales stock adjustments
     </p>
 
     <table class="cards" cellspacing="8" cellpadding="0">
@@ -79,6 +79,40 @@
                         <td class="num">{{ $product->quantity }}</td>
                         <td class="num">{{ $product->low_stock_threshold }}</td>
                         <td>{{ $product->quantity <= $product->low_stock_threshold ? 'Low Stock' : 'OK' }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
+
+    <p class="section-title">Stock Adjustment History</p>
+    <p>Non-sales stock changes, including archived products.</p>
+
+    @if ($adjustments->isEmpty())
+        <div class="note">No non-sales stock adjustments recorded yet.</div>
+    @else
+        <table class="report" cellpadding="0" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>Recorded</th>
+                    <th>Product</th>
+                    <th>Change</th>
+                    <th class="num">Before</th>
+                    <th class="num">After</th>
+                    <th>Reason</th>
+                    <th>Owner</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($adjustments as $adjustment)
+                    <tr class="{{ $loop->index % 2 === 1 ? 'alt' : '' }}">
+                        <td>{{ $adjustment->created_at->format('M j, Y g:i A') }}</td>
+                        <td>{{ $adjustment->product?->product_name ?? 'Unknown product' }}</td>
+                        <td>{{ $adjustment->direction === 'increase' ? '+' : '-' }}{{ $adjustment->quantity }}</td>
+                        <td class="num">{{ $adjustment->quantity_before }}</td>
+                        <td class="num">{{ $adjustment->quantity_after }}</td>
+                        <td>{{ $adjustment->reason }}</td>
+                        <td>{{ $adjustment->adjustedBy?->name ?? 'Unknown owner' }}</td>
                     </tr>
                 @endforeach
             </tbody>

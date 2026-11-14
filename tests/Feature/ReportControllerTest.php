@@ -379,6 +379,7 @@ class ReportControllerTest extends TestCase
 
         $html = view('reports.exports.inventory', [
             'products' => collect([$datedProduct, $legacyProduct]),
+            'adjustments' => collect(),
             'stats' => ['product_count' => 2, 'total_units' => 4, 'stock_value' => 400],
             'lowStockCount' => 0,
         ])->render();
@@ -394,12 +395,33 @@ class ReportControllerTest extends TestCase
 
         $html = view('reports.exports.inventory', [
             'products' => collect([$datedProduct, $legacyProduct]),
+            'adjustments' => collect(),
             'stats' => ['product_count' => 2, 'total_units' => 4, 'stock_value' => 400],
             'lowStockCount' => 0,
         ])->render();
 
         $this->assertStringContainsString('<td>Pants</td>', $html);
         $this->assertStringNotContainsString('<td>Uncategorized</td>', $html);
+    }
+
+    public function test_inventory_pdf_view_includes_archived_product_adjustments_and_escapes_reasons(): void
+    {
+        [$owner, , $product] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($product, $owner, 'decrease', 1, 2, 1, '<script>alert("demo")</script> damaged');
+        $product->update(['status' => 'archived']);
+        $product->delete();
+
+        $html = view('reports.exports.inventory', [
+            'products' => collect(),
+            'adjustments' => InventoryAdjustment::with(['product', 'adjustedBy'])->get(),
+            'stats' => ['product_count' => 0, 'total_units' => 0, 'stock_value' => 0],
+            'lowStockCount' => 0,
+        ])->render();
+
+        $this->assertStringContainsString('Stock Adjustment History', $html);
+        $this->assertStringContainsString('Synthetic Pants', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString('<script>alert("demo")</script>', $html);
     }
 
     public function test_inventory_excel_rows_include_recorded_and_unknown_collection_dates(): void
