@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Exports\InventoryReportExport;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\SalesTransaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -35,6 +36,41 @@ class ReportControllerTest extends TestCase
             ->assertOk()
             ->assertSee('Pants')
             ->assertDontSee('Uncategorized');
+    }
+
+    public function test_daily_report_groups_sales_by_hour_in_the_test_database(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-MORNING', '120.00', '2026-11-14 09:15:00'],
+            ['SYN-AFTERNOON', '80.00', '2026-11-14 14:45:00'],
+        ] as [$number, $total, $date]) {
+            SalesTransaction::query()->create([
+                'transaction_no' => $number,
+                'sale_type' => 'walk_in',
+                'online_platform' => '',
+                'total_amount' => $total,
+                'payment_status' => 'paid',
+                'recorded_by' => $owner->id,
+                'transaction_date' => $date,
+            ]);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'daily', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk()->assertSee('09:00')->assertSee('14:00');
+        $this->assertSame([
+            'transaction_count' => 2, 'total_sales' => 200.0, 'average_sale' => 100.0,
+        ], $response['report']['summary']);
+        $this->assertSame(120.0, $response['report']['chart']['totals'][9]);
+        $this->assertSame(80.0, $response['report']['chart']['totals'][14]);
+        $this->assertSame([
+            ['label' => '09:00', 'transactions' => 1, 'total' => 120.0],
+            ['label' => '14:00', 'transactions' => 1, 'total' => 80.0],
+        ], $response['report']['rows']);
     }
 
     public function test_inventory_pdf_view_includes_recorded_and_unknown_collection_dates(): void

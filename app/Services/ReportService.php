@@ -7,6 +7,7 @@ use App\Models\SalesTransaction;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ReportService
@@ -89,7 +90,7 @@ class ReportService
             $rows = SalesTransaction::query()
                 ->where('transaction_date', '>=', $start)
                 ->where('transaction_date', '<', $end)
-                ->selectRaw('HOUR(transaction_date) as sale_hour')
+                ->selectRaw($this->hourBucketExpression().' as sale_hour')
                 ->selectRaw('SUM(total_amount) as hour_total')
                 ->groupBy('sale_hour')
                 ->pluck('hour_total', 'sale_hour');
@@ -145,7 +146,7 @@ class ReportService
     private function salesRows(string $period, CarbonImmutable $start, CarbonImmutable $end): array
     {
         $groupBy = match ($period) {
-            'daily' => 'HOUR(transaction_date)',
+            'daily' => $this->hourBucketExpression(),
             'yearly' => 'MONTH(transaction_date)',
             default => 'DATE(transaction_date)',
         };
@@ -173,5 +174,12 @@ class ReportService
                 'total' => (float) $row->bucket_total,
             ];
         })->all();
+    }
+
+    private function hourBucketExpression(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(strftime('%H', transaction_date) AS INTEGER)"
+            : 'HOUR(transaction_date)';
     }
 }
