@@ -183,7 +183,7 @@
                                 <tr class="{{ $isLowStock ? 'bg-amber-50' : '' }}">
                                     <td class="py-3 pr-4 font-bold tabular-nums text-slate-900">{{ $product->product_code }}</td>
                                     <td class="py-3 pr-4 font-bold text-slate-900">{{ $product->product_name }}</td>
-                                    <td class="py-3 pr-4 font-medium text-slate-600">{{ $product->category?->name ?? 'Uncategorized' }}</td>
+                                    <td class="py-3 pr-4 font-medium text-slate-600">{{ $product->category?->category_name ?? 'Uncategorized' }}</td>
                                     <td class="py-3 pr-4 font-medium tabular-nums text-slate-600">{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                                     <td class="py-3 pr-4 text-right font-semibold tabular-nums text-slate-700">{{ Number::currency($product->price, 'PHP') }}</td>
                                     <td class="py-3 pr-4 text-right font-black tabular-nums text-slate-900">{{ $product->quantity }}</td>

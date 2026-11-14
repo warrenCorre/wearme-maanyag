@@ -64,7 +64,7 @@
                         <li class="flex items-center justify-between gap-3 py-3">
                             <div class="min-w-0">
                                 <p class="truncate text-sm font-bold text-slate-900">{{ $product->product_name }}</p>
-                                <p class="text-xs font-medium text-slate-500">{{ $product->category?->name ?? 'Uncategorized' }}</p>
+                                <p class="text-xs font-medium text-slate-500">{{ $product->category?->category_name ?? 'Uncategorized' }}</p>
                             </div>
                             <span class="shrink-0 rounded-xl border-2 border-rose-700 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">{{ $product->quantity }} left</span>
                         </li>

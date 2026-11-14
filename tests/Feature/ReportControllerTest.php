@@ -27,6 +27,16 @@ class ReportControllerTest extends TestCase
         $response->assertSee('Not recorded');
     }
 
+    public function test_owner_sees_actual_product_categories_in_the_inventory_report(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $this->actingAs($owner)->get(route('reports.index', ['period' => 'weekly', 'date' => '2026-11-05']))
+            ->assertOk()
+            ->assertSee('Pants')
+            ->assertDontSee('Uncategorized');
+    }
+
     public function test_inventory_pdf_view_includes_recorded_and_unknown_collection_dates(): void
     {
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
