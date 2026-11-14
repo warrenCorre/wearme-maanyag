@@ -75,6 +75,11 @@ class AssistantQuestionPolicy
             }
         }
 
+        if ($pending === null && ($visitContext['intent'] ?? null) === 'sales_summary'
+            && in_array($choice, ['today', 'yesterday', 'this week', 'last week', 'this month', 'last month', 'this year', 'last year'], true)) {
+            return $this->evaluate('Show me sales for '.$choice, $date);
+        }
+
         if (($visitContext['chat_topic'] ?? null) === 'thrift'
             && in_array($normalizedQuestion, ['joke', 'another joke'], true)) {
             return $this->generalChat($date, 'tell me another joke about thrift shopping');

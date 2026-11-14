@@ -129,8 +129,9 @@ class AssistantQuestionPolicyTest extends TestCase
         foreach (['Last week, please' => ['weekly', '2025-12-25'], 'Last month' => ['monthly', '2025-12-01'], 'Last year' => ['yearly', '2025-01-01']] as $question => [$period, $expectedDate]) {
             $pending = $policy->evaluate($question, $date, ['pending' => 'sales_period']);
             $followUp = $policy->evaluate('And what about '.str_replace(', please', '', $question).'?', $date, ['intent' => 'sales_summary']);
+            $bareFollowUp = $policy->evaluate($question, $date, ['intent' => 'sales_summary']);
 
-            foreach ([$pending, $followUp] as $decision) {
+            foreach ([$pending, $followUp, $bareFollowUp] as $decision) {
                 $this->assertSame('sales_summary', $decision['intent'], $question);
                 $this->assertSame($period, $decision['period'], $question);
                 $this->assertSame($expectedDate, $decision['date'], $question);
@@ -147,6 +148,10 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('sales_summary', $explicitFollowUp['intent']);
         $this->assertSame('2025-12-01', $explicitFollowUp['date']);
         $this->assertFalse($policy->evaluate('Last month', $date, ['pending' => 'sales_goal'])['allowed']);
+        $this->assertFalse($policy->evaluate('Last month', $date, ['pending' => 'sales_goal', 'intent' => 'sales_summary'])['allowed']);
+        $this->assertSame('daily', $policy->evaluate('Today', $date, ['intent' => 'sales_summary'])['period']);
+        $this->assertFalse($policy->evaluate('Last week and last month', $date, ['intent' => 'sales_summary'])['allowed']);
+        $this->assertFalse($policy->evaluate('Last month for Customer Ana', $date, ['intent' => 'sales_summary'])['allowed']);
     }
 
     public function test_previous_periods_keep_conflict_customer_and_write_guards(): void
