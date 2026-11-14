@@ -55,6 +55,6 @@ class ReportExportService
             ])->download($filename.'.pdf');
         }
 
-        return Excel::download(new InventoryReportExport($products, $this->reportService->inventoryAdjustments()), $filename.'.xlsx');
+        return Excel::download(new InventoryReportExport($products, $this->reportService->lazyInventoryAdjustments()), $filename.'.xlsx');
     }
 }

@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Category;
+use App\Models\Product;
 use App\Models\SalesTransaction;
 use App\Models\User;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
+use App\Services\AssistantResponseValidator;
 use App\Services\GeminiClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -548,6 +551,73 @@ class AssistantControllerTest extends TestCase
                 'answer_type' => 'fact',
                 'confidence' => 'high',
             ]]);
+    }
+
+    public function test_owner_receives_sourced_populated_best_sellers_from_mocked_provider_only(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 2)->startOfDay());
+        config(['services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $category = Category::query()->create(['category_name' => 'Synthetic clothing', 'status' => 'active']);
+        $jacket = Product::query()->create([
+            'product_code' => 'SYN-JACKET', 'product_name' => 'Synthetic Jacket',
+            'category_id' => $category->id, 'description' => 'Fictional jacket',
+            'price' => 10, 'quantity' => 2, 'low_stock_threshold' => 1,
+            'image' => '', 'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+        $shirt = Product::query()->create([
+            'product_code' => 'SYN-SHIRT', 'product_name' => 'Synthetic Shirt',
+            'category_id' => $category->id, 'description' => 'Fictional shirt',
+            'price' => 10, 'quantity' => 5, 'low_stock_threshold' => 1,
+            'image' => '', 'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+        $paid = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-PAID', 'sale_type' => 'walk_in', 'online_platform' => 'N/A',
+            'total_amount' => 30, 'payment_status' => 'paid', 'recorded_by' => $owner->id,
+            'transaction_date' => '2026-10-10 12:00:00',
+        ]);
+        $paid->items()->create(['product_id' => $jacket->id, 'quantity' => 3, 'unit_price' => 10, 'subtotal' => 30]);
+        $unpaid = SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-UNPAID', 'sale_type' => 'walk_in', 'online_platform' => 'N/A',
+            'customer_name' => 'Fictional Customer', 'total_amount' => 90,
+            'payment_status' => 'unpaid', 'recorded_by' => $owner->id,
+            'transaction_date' => '2026-10-10 13:00:00',
+        ]);
+        $unpaid->items()->create(['product_id' => $shirt->id, 'quantity' => 9, 'unit_price' => 10, 'subtotal' => 90]);
+
+        $providerContext = null;
+        $this->mock(GeminiClient::class, function (MockInterface $mock) use (&$providerContext): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(function (string $prompt, string $systemInstruction, array $schema) use (&$providerContext): bool {
+                    $providerContext = json_decode(explode("Verified system context (JSON):\n", $prompt, 2)[1] ?? '', true);
+
+                    return $schema === AssistantResponseValidator::RESPONSE_SCHEMA
+                        && str_contains($systemInstruction, 'best sellers use paid transactions only');
+                })
+                ->andReturn(json_encode([
+                    'answer' => 'Synthetic Jacket leads with 3 paid units and PHP 30 in paid sales.',
+                    'answer_type' => 'summary',
+                    'sources' => [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+                    'confidence' => 'high',
+                    'refusal' => false,
+                ]));
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'List best-selling products'])
+            ->assertExactJson(['result' => [
+                'status' => 'answered',
+                'message' => 'Synthetic Jacket leads with 3 paid units and PHP 30 in paid sales.',
+                'sources' => [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+                'answer_type' => 'summary',
+                'confidence' => 'high',
+            ]]);
+
+        $this->assertSame([['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30]], $providerContext['best_sellers']);
+        $this->assertSame(['best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.'], $providerContext['scopes']);
+        $this->assertSame([['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']], $providerContext['allowed_sources']);
+        $this->assertSame([], $providerContext['sales']['summary']);
+        $this->assertStringNotContainsString('Fictional Customer', json_encode($providerContext));
+        $this->assertStringNotContainsString('Synthetic Shirt', json_encode($providerContext));
     }
 
     public function test_owner_sees_unsupported_question_as_a_declined_chat_message(): void

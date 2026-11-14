@@ -8,7 +8,9 @@ use App\Models\SalesTransaction;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Validation\ValidationException;
 
 class ReportService
@@ -55,6 +57,22 @@ class ReportService
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
+    }
+
+    public function paginatedInventoryAdjustments(): LengthAwarePaginator
+    {
+        return InventoryAdjustment::with(['product', 'adjustedBy'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(20, ['*'], 'adjustments_page');
+    }
+
+    public function lazyInventoryAdjustments(): LazyCollection
+    {
+        return InventoryAdjustment::with(['product', 'adjustedBy'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->lazy(200);
     }
 
     public function inventoryStats(): array

@@ -204,10 +204,10 @@
         </section>
         <section class="mt-5 rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
             <h2 class="text-sm font-black uppercase tracking-wide text-rose-500">Stock Adjustment History</h2>
-            <p class="mt-1 text-sm font-medium text-slate-500">All non-sales stock changes, including adjustments to archived products.</p>
+            <p class="mt-1 text-sm font-medium text-slate-500">Non-sales stock changes, including adjustments to archived products. Browse pages for the complete history.</p>
 
             @if ($adjustments->isEmpty())
-                <p class="mt-6 rounded-xl bg-slate-50 p-4 text-sm font-medium text-slate-500">No non-sales stock adjustments recorded yet.</p>
+                <p class="mt-6 rounded-xl bg-slate-50 p-4 text-sm font-medium text-slate-500">{{ $adjustments->total() === 0 ? 'No non-sales stock adjustments recorded yet.' : 'No adjustments on this page.' }}</p>
             @else
                 <div class="mt-4 overflow-x-auto">
                     <table class="w-full min-w-[800px] text-left text-sm">
@@ -238,6 +238,7 @@
                     </table>
                 </div>
             @endif
+            <div class="mt-6">{{ $adjustments->links() }}</div>
         </section>
     </div>
 @endsection
@@ -297,8 +298,13 @@
                 });
             });
 
+            const showInventory = window.location.hash === '#inventory-report-panel'
+                || new URLSearchParams(window.location.search).has('adjustments_page');
+
             tabs.forEach(function (tab, index) {
-                const isActive = index === 0;
+                const isActive = showInventory ? index === 1 : index === 0;
+                tab.panel.classList.toggle('hidden', !isActive);
+                tab.button.setAttribute('aria-selected', String(isActive));
                 tab.button.classList.toggle('bg-slate-900', isActive);
                 tab.button.classList.toggle('text-white', isActive);
                 tab.button.classList.toggle('bg-white', !isActive);

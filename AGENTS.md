@@ -13,8 +13,8 @@
 - Never expose secrets or .env values.
 - Run relevant tests after changes.
 - Explain modifications and remaining issues.
-- After each approved code slice, give a short, approachable explanation of the changed code (with a small example when useful), report verification and remaining issues, and say whether the slice is ready for the user to commit with a suggested commit message.
-- The user handles all Git/GitHub actions, including staging, committing, and pushing. Do not do them unless the user explicitly changes this agreement.
+- After each approved code slice, give a short, approachable explanation of the changed code (with a small example when useful), report verification and remaining issues, and give the local commit hash and message.
+- The assistant stages and commits each approved, verified code slice locally. The user handles all pushes and other GitHub actions; never push on the user's behalf.
 
 ## Cross-Model Development Handoff
 - When resuming after a model switch, compaction, or context loss, read `../WearMe_Maanyag_Whole_Directory_Understanding.md` for approved decisions, current progress, open gaps, and the next task. Check the current code and Git status rather than assuming the brain is fully up to date.
