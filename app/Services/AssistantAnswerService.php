@@ -160,6 +160,7 @@ class AssistantAnswerService
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',
+                'visit_context' => ['intent' => 'damaged_adjustments'],
             ];
         }
 
@@ -174,6 +175,7 @@ class AssistantAnswerService
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',
+                'visit_context' => ['intent' => 'stock_adjustments'],
             ];
         }
 

@@ -166,6 +166,31 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_bare_month_follows_only_a_verified_adjustment_topic_in_the_active_visit(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach (['damaged_adjustments' => 'damaged_adjustments', 'stock_adjustments' => 'stock_adjustments'] as $topic => $intent) {
+            foreach (['Last month', 'What about previous month?'] as $question) {
+                $decision = $policy->evaluate($question, $date, ['intent' => $topic]);
+                $this->assertSame($intent, $decision['intent'], $question);
+                $this->assertSame('monthly', $decision['period'], $question);
+                $this->assertSame('2025-12-01', $decision['date'], $question);
+            }
+
+            $this->assertSame('2026-01-01', $policy->evaluate('This month', $date, ['intent' => $topic])['date']);
+        }
+
+        foreach ([null, [], ['intent' => 'inventory_summary'], ['intent' => 'stock_adjustments', 'pending' => 'sales_goal']] as $context) {
+            $this->assertFalse($policy->evaluate('Last month', $date, $context)['allowed']);
+        }
+
+        foreach (['Last month and this month', 'Last month for Synthetic Jacket', 'Last month for customer Ana', 'Show adjustment reasons last month'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date, ['intent' => 'stock_adjustments'])['allowed'], $question);
+        }
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

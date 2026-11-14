@@ -80,6 +80,15 @@ class AssistantQuestionPolicy
             return $this->evaluate('Show me sales for '.$choice, $date);
         }
 
+        if ($pending === null && in_array($visitContext['intent'] ?? null, ['damaged_adjustments', 'stock_adjustments'], true)
+            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(this month|last month)$/', $normalizedQuestion, $matches) === 1) {
+            $question = $visitContext['intent'] === 'damaged_adjustments'
+                ? 'How many damaged item adjustments '.$matches[1]
+                : 'Summarize stock adjustments '.$matches[1];
+
+            return $this->evaluate($question, $date);
+        }
+
         if (($visitContext['chat_topic'] ?? null) === 'thrift'
             && in_array($normalizedQuestion, ['joke', 'another joke'], true)) {
             return $this->generalChat($date, 'tell me another joke about thrift shopping');
