@@ -129,6 +129,32 @@ class ReportControllerTest extends TestCase
         $this->assertSame(0.0, $response['report']['chart']['totals'][1]);
     }
 
+    public function test_weekly_report_includes_monday_through_sunday_only(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-SUNDAY-BEFORE', '10.00', '2026-11-01 23:59:59'],
+            ['SYN-MONDAY', '40.00', '2026-11-02 00:00:00'],
+            ['SYN-SUNDAY', '60.00', '2026-11-08 23:59:59'],
+            ['SYN-MONDAY-AFTER', '20.00', '2026-11-09 00:00:00'],
+        ] as [$number, $total, $date]) {
+            $this->createReportSale($owner, $number, $total, $date);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'weekly', 'date' => '2026-11-05',
+        ]));
+
+        $response->assertOk();
+        $this->assertSame(['transaction_count' => 2, 'total_sales' => 100.0, 'average_sale' => 50.0], $response['report']['summary']);
+        $this->assertSame([40.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0], $response['report']['chart']['totals']);
+        $this->assertSame([
+            ['label' => 'Mon, Nov 2', 'transactions' => 1, 'total' => 40.0],
+            ['label' => 'Sun, Nov 8', 'transactions' => 1, 'total' => 60.0],
+        ], $response['report']['rows']);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
