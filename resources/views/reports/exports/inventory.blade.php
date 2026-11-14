@@ -73,7 +73,7 @@
                     <tr class="{{ $loop->index % 2 === 1 ? 'alt' : '' }}">
                         <td>{{ $product->product_code }}</td>
                         <td>{{ $product->product_name }}</td>
-                        <td>{{ $product->category?->name ?? 'Uncategorized' }}</td>
+                        <td>{{ $product->category?->category_name ?? 'Uncategorized' }}</td>
                         <td>{{ $product->collection_date?->toDateString() ?? 'Not recorded' }}</td>
                         <td class="num">{{ number_format((float) $product->price, 2) }}</td>
                         <td class="num">{{ $product->quantity }}</td>

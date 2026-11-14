@@ -88,6 +88,20 @@ class ReportControllerTest extends TestCase
         $this->assertStringContainsString('Not recorded', $html);
     }
 
+    public function test_inventory_pdf_view_includes_actual_product_categories(): void
+    {
+        [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $html = view('reports.exports.inventory', [
+            'products' => collect([$datedProduct, $legacyProduct]),
+            'stats' => ['product_count' => 2, 'total_units' => 4, 'stock_value' => 400],
+            'lowStockCount' => 0,
+        ])->render();
+
+        $this->assertStringContainsString('<td>Pants</td>', $html);
+        $this->assertStringNotContainsString('<td>Uncategorized</td>', $html);
+    }
+
     public function test_inventory_excel_rows_include_recorded_and_unknown_collection_dates(): void
     {
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
@@ -98,6 +112,16 @@ class ReportControllerTest extends TestCase
         $this->assertSame('Collection Date', $export->headings()[3]);
         $this->assertSame('2026-10-15', $rows[0][3]);
         $this->assertSame('Not recorded', $rows[1][3]);
+    }
+
+    public function test_inventory_excel_rows_include_actual_product_categories(): void
+    {
+        [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $rows = (new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->collection()->all();
+
+        $this->assertSame('Pants', $rows[0][2]);
+        $this->assertSame('Pants', $rows[1][2]);
     }
 
     /**

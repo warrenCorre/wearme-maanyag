@@ -16,7 +16,7 @@ class InventoryReportExport implements FromCollection, WithHeadings
         return $this->products->map(fn (Product $product) => [
             $product->product_code,
             $product->product_name,
-            $product->category?->name ?? 'Uncategorized',
+            $product->category?->category_name ?? 'Uncategorized',
             $product->collection_date?->toDateString() ?? 'Not recorded',
             (float) $product->price,
             (int) $product->quantity,
