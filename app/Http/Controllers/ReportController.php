@@ -17,6 +17,7 @@ class ReportController extends Controller
         $validated = $request->validate([
             'period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly', 'yearly'])],
             'date' => ['nullable', 'date'],
+            'adjustments_page' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $period = $validated['period'] ?? 'daily';
@@ -27,7 +28,9 @@ class ReportController extends Controller
             'date' => $date->toDateString(),
             'report' => $reportService->salesReport($period, $date),
             'products' => $reportService->inventoryProducts(),
-            'adjustments' => $reportService->inventoryAdjustments(),
+            'adjustments' => $reportService->paginatedInventoryAdjustments()
+                ->appends(['period' => $period, 'date' => $date->toDateString()])
+                ->fragment('inventory-report-panel'),
             'inventoryStats' => $reportService->inventoryStats(),
             'lowStockCount' => $reportService->lowStockCount(),
         ]);

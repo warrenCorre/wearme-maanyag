@@ -319,6 +319,57 @@ class ReportControllerTest extends TestCase
         ]))->assertOk()->assertSee('No non-sales stock adjustments recorded yet.');
     }
 
+    public function test_inventory_adjustment_history_paginates_without_losing_filters_or_archived_products(): void
+    {
+        [$owner, $activeProduct, $archivedProduct] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($archivedProduct, $owner, 'decrease', 1, 2, 1, 'Old archived adjustment');
+        $archivedProduct->update(['status' => 'archived']);
+        $archivedProduct->delete();
+
+        for ($number = 1; $number <= 20; $number++) {
+            $this->createReportAdjustment($activeProduct, $owner, 'increase', 1, 2, 3, "Synthetic adjustment {$number}");
+        }
+
+        $filters = ['period' => 'yearly', 'date' => '2026-11-14'];
+        $firstPage = $this->actingAs($owner)->get(route('reports.index', $filters));
+
+        $firstPage->assertOk()
+            ->assertSee('Synthetic adjustment 20')
+            ->assertSee('adjustments_page=2', false)
+            ->assertDontSee('Old archived adjustment');
+        $this->assertCount(20, $firstPage['adjustments']);
+        $this->assertSame(21, $firstPage['adjustments']->total());
+        $this->assertSame('adjustments_page', $firstPage['adjustments']->getPageName());
+        $nextPageUrl = $firstPage['adjustments']->nextPageUrl();
+        $this->assertStringContainsString('period=yearly', $nextPageUrl);
+        $this->assertStringContainsString('date=2026-11-14', $nextPageUrl);
+        $this->assertStringContainsString('adjustments_page=2', $nextPageUrl);
+        $this->assertStringEndsWith('#inventory-report-panel', $nextPageUrl);
+
+        $secondPage = $this->get($nextPageUrl);
+        $secondPage->assertOk()
+            ->assertSee('Old archived adjustment')
+            ->assertDontSee('Synthetic adjustment 20');
+        $this->assertCount(1, $secondPage['adjustments']);
+        $this->assertSame($archivedProduct->id, $secondPage['adjustments'][0]->product->id);
+        $this->assertSame('yearly', $secondPage['period']);
+        $this->assertSame('2026-11-14', $secondPage['date']);
+        $this->get(route('reports.index', [...$filters, 'adjustments_page' => 999]))
+            ->assertOk()
+            ->assertSee('No adjustments on this page.')
+            ->assertDontSee('No non-sales stock adjustments recorded yet.');
+    }
+
+    public function test_inventory_adjustment_history_rejects_invalid_page_numbers(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $this->actingAs($owner)->get(route('reports.index', ['adjustments_page' => 'invalid']))
+            ->assertSessionHasErrors('adjustments_page');
+        $this->get(route('reports.index', ['adjustments_page' => 0]))
+            ->assertSessionHasErrors('adjustments_page');
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
