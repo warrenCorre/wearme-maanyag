@@ -99,7 +99,30 @@ class AssistantQuestionPolicyTest extends TestCase
             $this->assertSame('Report only recorded damaged-item adjustment count and removed units without reasons or product details.', $result['safe_question']);
         }
 
-        foreach (['Show damaged item reasons', 'How many damaged item adjustments for Synthetic Jacket?', 'Summarize damaged item adjustments for customer Ana', 'Delete damaged item adjustments', 'How many damaged item adjustments last month?'] as $question) {
+        foreach (['Show damaged item reasons', 'How many damaged item adjustments for Synthetic Jacket?', 'Summarize damaged item adjustments for customer Ana', 'Delete damaged item adjustments', 'How many damaged item adjustments last quarter?'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
+    public function test_damaged_adjustment_month_questions_only_select_current_or_previous_calendar_month(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach ([
+            'How many damaged item adjustments this month?' => '2026-01-01',
+            'Summarize damaged item adjustments last month' => '2025-12-01',
+            'How many damaged item adjustments previous month?' => '2025-12-01',
+        ] as $question => $expectedDate) {
+            $result = $policy->evaluate($question, $date);
+
+            $this->assertSame('damaged_adjustments', $result['intent'], $question);
+            $this->assertSame('monthly', $result['period'], $question);
+            $this->assertSame($expectedDate, $result['date'], $question);
+            $this->assertStringNotContainsString($question, $result['safe_question'], $question);
+        }
+
+        foreach (['How many damaged item adjustments this month and last month?', 'How many damaged item adjustments yesterday?', 'How many damaged item adjustments last month for Synthetic Jacket?', 'Show damaged item reasons this month'] as $question) {
             $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
         }
     }

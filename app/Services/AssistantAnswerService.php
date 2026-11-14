@@ -151,7 +151,7 @@ class AssistantAnswerService
         if ($decision['intent'] === 'damaged_adjustments') {
             return [
                 'status' => 'answered',
-                'message' => $this->damagedAdjustmentService->answer(),
+                'message' => $this->damagedAdjustmentService->answer($decision['period'], CarbonImmutable::parse($decision['date'])),
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded damaged-item adjustments',

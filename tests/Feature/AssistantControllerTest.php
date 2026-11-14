@@ -878,6 +878,32 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_damaged_adjustment_months_return_local_sourced_counts_without_a_provider_call(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));
+        config(['services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments this month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during November 2026). Reasons and product details are not shown.')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14');
+        $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during October 2026). Reasons and product details are not shown.')
+            ->assertJsonPath('result.sources.0.as_of', '2026-10-14');
+        $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments this month and last month?'])
+            ->assertJsonPath('result.status', 'declined');
+
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_use_screened_prior_month_conversational_sales_with_the_fixed_local_fake(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));
