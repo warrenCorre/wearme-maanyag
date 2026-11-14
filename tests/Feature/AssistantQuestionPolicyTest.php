@@ -223,6 +223,35 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertStringNotContainsString('reasons', $decision['reason']);
     }
 
+    public function test_adjustment_week_and_year_questions_select_bounded_calendar_periods(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach ([
+            ['Summarize stock adjustments this week', 'stock_adjustments', 'weekly', '2026-01-01'],
+            ['Summarize stock adjustments for last week', 'stock_adjustments', 'weekly', '2025-12-25'],
+            ['How many damaged item adjustments were there this year?', 'damaged_adjustments', 'yearly', '2026-01-01'],
+            ['Summarize damaged item adjustments during prior year', 'damaged_adjustments', 'yearly', '2025-01-01'],
+            ['Summarize stock adjustments last year', 'stock_adjustments', 'yearly', '2025-01-01'],
+            ['How many damaged item adjustments last week?', 'damaged_adjustments', 'weekly', '2025-12-25'],
+        ] as [$question, $intent, $period, $expectedDate]) {
+            $decision = $policy->evaluate($question, $date);
+
+            $this->assertSame($intent, $decision['intent'], $question);
+            $this->assertSame($period, $decision['period'], $question);
+            $this->assertSame($expectedDate, $decision['date'], $question);
+        }
+
+        foreach (['Summarize stock adjustments this week and last week', 'How many damaged item adjustments this year for Synthetic Jacket?', 'How many damaged item adjustments last year for customer Ana?', 'Show stock adjustment reasons this week'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+
+        $this->assertSame('weekly', $policy->evaluate('Last week', $date, ['intent' => 'stock_adjustments'])['period']);
+        $this->assertSame('2025-01-01', $policy->evaluate('What about last year?', $date, ['intent' => 'damaged_adjustments'])['date']);
+        $this->assertFalse($policy->evaluate('Last year', $date)['allowed']);
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

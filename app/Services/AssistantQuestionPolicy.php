@@ -81,7 +81,7 @@ class AssistantQuestionPolicy
         }
 
         if ($pending === null && in_array($visitContext['intent'] ?? null, ['damaged_adjustments', 'stock_adjustments'], true)
-            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(this month|last month)$/', $normalizedQuestion, $matches) === 1) {
+            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
             $question = $visitContext['intent'] === 'damaged_adjustments'
                 ? 'How many damaged item adjustments '.$matches[1]
                 : 'Summarize stock adjustments '.$matches[1];
@@ -159,16 +159,24 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
-            if ($matches[1] === 'last month') {
-                $date = $date->subMonthNoOverflow();
-            }
+        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            $date = match ($matches[1]) {
+                'last month' => $date->subMonthNoOverflow(),
+                'last week' => $date->subWeek(),
+                'last year' => $date->subYearNoOverflow(),
+                default => $date,
+            };
+            $period = match (true) {
+                str_ends_with($matches[1], 'week') => 'weekly',
+                str_ends_with($matches[1], 'year') => 'yearly',
+                default => 'monthly',
+            };
 
             return $this->allowed(
                 'damaged_adjustments',
-                'monthly',
+                $period,
                 $date,
-                'Report only recorded damaged-item adjustment count and removed units for '.$date->format('F Y').' without reasons or product details.',
+                'Report only recorded damaged-item adjustment count and removed units for '.$period.' on '.$date->toDateString().' without reasons or product details.',
             );
         }
 
@@ -185,16 +193,24 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
-            if ($matches[1] === 'last month') {
-                $date = $date->subMonthNoOverflow();
-            }
+        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            $date = match ($matches[1]) {
+                'last month' => $date->subMonthNoOverflow(),
+                'last week' => $date->subWeek(),
+                'last year' => $date->subYearNoOverflow(),
+                default => $date,
+            };
+            $period = match (true) {
+                str_ends_with($matches[1], 'week') => 'weekly',
+                str_ends_with($matches[1], 'year') => 'yearly',
+                default => 'monthly',
+            };
 
             return $this->allowed(
                 'stock_adjustments',
-                'monthly',
+                $period,
                 $date,
-                'Report only recorded non-sales stock adjustment counts and units by direction for '.$date->format('F Y').' without reasons or product details.',
+                'Report only recorded non-sales stock adjustment counts and units by direction for '.$period.' on '.$date->toDateString().' without reasons or product details.',
             );
         }
 

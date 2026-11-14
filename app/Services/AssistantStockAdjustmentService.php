@@ -13,12 +13,25 @@ class AssistantStockAdjustmentService
         $query = InventoryAdjustment::query();
         $scope = 'all time';
 
-        if ($period === 'monthly') {
+        if (in_array($period, ['monthly', 'weekly', 'yearly'], true)) {
             $date = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::today());
-            $start = $date->startOfMonth();
+            $start = match ($period) {
+                'weekly' => $date->startOfWeek(CarbonImmutable::MONDAY),
+                'yearly' => $date->startOfYear(),
+                default => $date->startOfMonth(),
+            };
+            $end = match ($period) {
+                'weekly' => $start->addWeek(),
+                'yearly' => $start->addYear(),
+                default => $start->addMonth(),
+            };
             $query->where('created_at', '>=', $start)
-                ->where('created_at', '<', $start->addMonth());
-            $scope = 'during '.$date->format('F Y');
+                ->where('created_at', '<', $end);
+            $scope = match ($period) {
+                'weekly' => 'during week of '.$start->format('F j, Y'),
+                'yearly' => 'during '.$start->year,
+                default => 'during '.$date->format('F Y'),
+            };
         }
 
         $totals = $query
