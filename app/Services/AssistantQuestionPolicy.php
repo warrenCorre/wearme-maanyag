@@ -49,26 +49,28 @@ class AssistantQuestionPolicy
             }
         }
 
+        $choice = $this->clarificationChoice($normalizedQuestion);
+
         if ($pending === 'sales_goal') {
-            if (in_array($normalizedQuestion, ['totals', 'total', 'sales totals', 'revenue', 'transactions', 'transaction counts'], true)) {
+            if (in_array($choice, ['totals', 'total', 'sales totals', 'revenue', 'transactions', 'transaction counts'], true)) {
                 return $this->clarification($date, 'sales_period');
             }
 
-            if (in_array($normalizedQuestion, ['best sellers', 'top sellers'], true)) {
+            if (in_array($choice, ['best sellers', 'top sellers'], true)) {
                 return $this->evaluate('List best-selling products', $date);
             }
         }
 
-        if ($pending === 'sales_period' && in_array($normalizedQuestion, ['today', 'yesterday', 'this week', 'this month', 'this year'], true)) {
-            return $this->evaluate('Show me sales for '.$normalizedQuestion, $date);
+        if ($pending === 'sales_period' && in_array($choice, ['today', 'yesterday', 'this week', 'this month', 'this year'], true)) {
+            return $this->evaluate('Show me sales for '.$choice, $date);
         }
 
         if ($pending === 'unpaid_goal') {
-            if (in_array($normalizedQuestion, ['aggregate', 'total', 'overall', 'balance', 'unpaid balance', 'aggregate unpaid'], true)) {
+            if (in_array($choice, ['aggregate', 'total', 'overall', 'balance', 'unpaid balance', 'aggregate unpaid', 'aggregate unpaid balance'], true)) {
                 return $this->evaluate('What is the total unpaid balance?', $date);
             }
 
-            if (in_array($normalizedQuestion, ['one', 'a sale', 'one sale', 'particular', 'particular sale', 'a particular sale', 'latest', 'latest sale', 'the latest one', 'recent sale', 'specific sale', 'sale details'], true)) {
+            if (in_array($choice, ['one', 'a sale', 'one sale', 'particular', 'particular sale', 'a particular sale', 'latest', 'latest one', 'latest sale', 'recent sale', 'specific sale', 'sale details'], true)) {
                 return $this->localLatestUnpaidSale($date);
             }
         }
@@ -157,7 +159,7 @@ class AssistantQuestionPolicy
         if ($visitContext !== null && in_array($visitContext['intent'] ?? null, [
             'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
         ], true)) {
-            $followUp = preg_replace('/^(?:(?:and|also|then)\s+|(?:what|how)\s+about\s+)(?:the\s+)?/', '', $normalizedQuestion) ?? '';
+            $followUp = preg_replace('/^(?:(?:(?:and|also|then)\s+)?(?:what|how)\s+about|(?:and|also|then))(?:\s+the)?\s+/', '', $normalizedQuestion) ?? '';
 
             if ($followUp !== $normalizedQuestion) {
                 if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year)$/', $followUp) === 1) {
@@ -211,6 +213,15 @@ class AssistantQuestionPolicy
     private function withoutSocialOpening(string $question): string
     {
         return preg_replace('/^(?:hi|hello|hey|good (?:morning|afternoon|evening))(?:,? (?:there|maanyag))?(?:[,!]\s*|\s+)(?=\S)/u', '', $question) ?? $question;
+    }
+
+    private function clarificationChoice(string $question): string
+    {
+        $choice = preg_replace('/^please /', '', str_replace(',', '', $question)) ?? $question;
+        $choice = preg_replace('/^(?:id like|i would like|i want|could you (?:show|give) me|can you (?:show|give) me|(?:show|give) me) /', '', $choice) ?? $choice;
+        $choice = preg_replace('/ please$/', '', $choice) ?? $choice;
+
+        return preg_replace('/^the /', '', $choice) ?? $choice;
     }
 
     private function socialReplyFor(string $question): ?string

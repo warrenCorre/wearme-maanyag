@@ -8,12 +8,14 @@ use App\Models\InventoryAdjustment;
 use App\Models\Product;
 use App\Models\SalesTransaction;
 use App\Models\User;
+use App\Services\ReportChartImage;
 use App\Services\ReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Tests\TestCase;
+use ZipArchive;
 
 class ReportControllerTest extends TestCase
 {
@@ -435,6 +437,34 @@ class ReportControllerTest extends TestCase
         $this->assertStringContainsString('These periods overlap; do not add their totals together.', $html);
     }
 
+    public function test_pdf_export_headers_show_a_readable_generation_timestamp(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 10:15:00'));
+        $report = [
+            'start' => CarbonImmutable::parse('2026-11-14'),
+            'end' => CarbonImmutable::parse('2026-11-14 23:59:59'),
+            'summary' => ['transaction_count' => 0, 'total_sales' => 0.0, 'average_sale' => 0.0],
+            'rows' => [],
+        ];
+
+        $salesHtml = view('reports.exports.sales', [
+            'reports' => array_fill_keys(['daily', 'weekly', 'monthly', 'yearly'], $report),
+            'date' => '2026-11-14',
+        ])->render();
+        $inventoryHtml = view('reports.exports.inventory', [
+            'products' => collect(),
+            'lowStockProducts' => collect(),
+            'adjustments' => collect(),
+            'stats' => ['product_count' => 0, 'total_units' => 0, 'stock_value' => 0],
+            'lowStockCount' => 0,
+        ])->render();
+
+        foreach ([$salesHtml, $inventoryHtml] as $html) {
+            $this->assertStringContainsString('Nov 14, 2026 • 10:15', $html);
+            $this->assertStringNotContainsString('&amp;#8226;', $html);
+        }
+    }
+
     public function test_sales_exports_include_all_four_periods_for_one_reference_date(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
@@ -465,8 +495,36 @@ class ReportControllerTest extends TestCase
         $this->assertSame(['range' => 'Nov 1, 2026 - Nov 30, 2026', 'total' => 150.0, 'transactions' => 2], $totals['MONTHLY']);
         $this->assertSame(['range' => 'Jan 1, 2026 - Dec 31, 2026', 'total' => 175.0, 'transactions' => 3], $totals['YEARLY']);
 
+        $chartReader = IOFactory::createReader('Xlsx');
+        $chartReader->setIncludeCharts(true);
+        $chartSheet = $chartReader->load($excel->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $charts = $chartSheet->getChartCollection();
+        $this->assertCount(4, $charts);
+        $archive = new ZipArchive;
+        $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+        foreach (['daily' => 24, 'weekly' => 7, 'monthly' => 30, 'yearly' => 12] as $period => $buckets) {
+            $index = array_search($period, ['daily', 'weekly', 'monthly', 'yearly'], true);
+            $this->assertSame(ucfirst($period).' Sales (PHP)', $charts[$index]->getTitle()->getCaptionText());
+            $series = $charts[$index]->getPlotArea()->getPlotGroupByIndex(0);
+            $sectionRow = $this->spreadsheetSectionRow($chartSheet, strtoupper($period));
+            $first = $sectionRow + 1;
+            $last = $sectionRow + $buckets;
+            $this->assertSame("'Sales Report'!\$F\${$first}:\$F\${$last}", $series->getPlotValues()[0]->getDataSource());
+            $this->assertSame("'Sales Report'!\$E\${$first}:\$E\${$last}", $series->getPlotCategories()[0]->getDataSource());
+            $chartTotal = 0.0;
+            for ($row = $first; $row <= $last; $row++) {
+                $chartTotal += (float) $chartSheet->getCell('F'.$row)->getValue();
+            }
+            $this->assertSame((float) $totals[strtoupper($period)]['total'], $chartTotal);
+            $chartXml = $archive->getFromName('xl/charts/chart'.($index + 1).'.xml');
+            $this->assertIsString($chartXml);
+            $this->assertStringContainsString('ptCount val="'.$buckets.'"', $chartXml);
+        }
+        $archive->close();
+
         $pdf = $this->get(route('reports.sales.export', ['date' => '2026-11-14', 'format' => 'pdf']));
         $pdf->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertSame(4, substr_count($pdf->getContent(), '/Subtype /Image'));
         $reports = [];
         foreach (['daily', 'weekly', 'monthly', 'yearly'] as $period) {
             $reports[$period] = app(ReportService::class)->salesReport($period, CarbonImmutable::parse('2026-11-14'));
@@ -475,6 +533,37 @@ class ReportControllerTest extends TestCase
         foreach (['100.00', '150.00', '175.00'] as $amount) {
             $this->assertStringContainsString('PHP '.$amount, $html);
         }
+    }
+
+    private function spreadsheetSectionRow(Worksheet $sheet, string $section): int
+    {
+        for ($row = 1; $row <= $sheet->getHighestDataRow(); $row++) {
+            if ($sheet->getCell('A'.$row)->getValue() === $section) {
+                return $row;
+            }
+        }
+
+        $this->fail("Missing {$section} in sales workbook.");
+    }
+
+    public function test_sales_pdf_renders_four_readable_graph_images_including_empty_periods(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+        $chartImage = app(ReportChartImage::class);
+        $reports = [];
+        $images = [];
+
+        foreach (['daily', 'weekly', 'monthly', 'yearly'] as $period) {
+            $reports[$period] = app(ReportService::class)->salesReport($period, CarbonImmutable::parse('2026-11-14'));
+            $images[$period] = $chartImage->verticalBars($reports[$period]['chart']['labels'], $reports[$period]['chart']['totals'], 'PHP');
+            $this->assertSame([1000, 300], array_slice(getimagesizefromstring(base64_decode($images[$period])), 0, 2));
+        }
+
+        $html = view('reports.exports.sales', ['reports' => $reports, 'date' => '2026-11-14', 'chartImages' => $images])->render();
+        $this->assertSame(4, substr_count($html, 'src="data:image/png;base64,'));
+        $this->assertStringContainsString('Daily Sales Graph (PHP)', $html);
+        $this->actingAs($owner)->get(route('reports.sales.export', ['date' => '2026-11-14', 'format' => 'pdf']))
+            ->assertOk();
     }
 
     public function test_sales_excel_export_labels_all_four_periods_when_there_are_no_sales(): void
@@ -706,11 +795,11 @@ class ReportControllerTest extends TestCase
 
         $response->assertOk();
         $sheet = IOFactory::load($response->baseResponse->getFile()->getPathname())->getActiveSheet();
-        $this->assertSame('Inventory Overview', $sheet->getCell('A3')->getValue());
-        $this->assertSame(1, $sheet->getCell('B4')->getValue());
-        $this->assertSame(1, $sheet->getCell('B5')->getValue());
-        $this->assertSame(100.0, $sheet->getCell('B6')->getValue());
-        $this->assertSame(1, $sheet->getCell('B7')->getValue());
+        $overviewRow = $this->spreadsheetSectionDataRow($sheet, 'Inventory Overview') - 1;
+        $this->assertSame(1, $sheet->getCell('B'.$overviewRow)->getValue());
+        $this->assertSame(1, $sheet->getCell('B'.($overviewRow + 1))->getValue());
+        $this->assertSame(100.0, $sheet->getCell('B'.($overviewRow + 2))->getValue());
+        $this->assertSame(1, $sheet->getCell('B'.($overviewRow + 3))->getValue());
         $lowStockRow = $this->spreadsheetSectionDataRow($sheet, 'Low-Stock Details');
         $this->assertSame('SYN-001', $sheet->getCell('A'.$lowStockRow)->getValue());
         $this->assertSame('2026-10-15', $sheet->getCell('D'.$lowStockRow)->getValue());
@@ -733,12 +822,93 @@ class ReportControllerTest extends TestCase
 
         $response->assertOk();
         $sheet = IOFactory::load($response->baseResponse->getFile()->getPathname())->getActiveSheet();
-        $this->assertSame(0, $sheet->getCell('B4')->getValue());
-        $this->assertSame(0, $sheet->getCell('B5')->getValue());
-        $this->assertSame(0.0, $sheet->getCell('B6')->getValue());
+        $overviewRow = $this->spreadsheetSectionDataRow($sheet, 'Inventory Overview') - 1;
+        $this->assertSame(0, $sheet->getCell('B'.$overviewRow)->getValue());
+        $this->assertSame(0, $sheet->getCell('B'.($overviewRow + 1))->getValue());
+        $this->assertSame(0.0, $sheet->getCell('B'.($overviewRow + 2))->getValue());
         $this->assertSame('No low-stock products.', $sheet->getCell('A'.$this->spreadsheetSectionDataRow($sheet, 'Low-Stock Details'))->getValue());
         $this->assertSame('No active products yet.', $sheet->getCell('A'.$this->spreadsheetSectionDataRow($sheet, 'All Active Products'))->getValue());
         $this->assertSame('No non-sales stock adjustments recorded yet.', $sheet->getCell('A'.$this->spreadsheetSectionDataRow($sheet, 'Stock Adjustment History'))->getValue());
+    }
+
+    public function test_inventory_exports_graph_only_the_top_ten_active_products_but_keep_complete_tables(): void
+    {
+        [$owner, $first, $archived] = $this->createProductsWithRecordedAndUnknownDates();
+        $archived->update(['quantity' => 99, 'status' => 'archived']);
+
+        for ($quantity = 3; $quantity <= 13; $quantity++) {
+            $product = $first->replicate();
+            $product->product_code = 'SYN-'.sprintf('%03d', $quantity);
+            $product->product_name = 'Synthetic Stock '.$quantity;
+            $product->quantity = $quantity;
+            $product->save();
+        }
+
+        $excel = $this->actingAs($owner)->get(route('reports.inventory.export', ['format' => 'excel']));
+
+        $excel->assertOk();
+        $reader = IOFactory::createReader('Xlsx');
+        $reader->setIncludeCharts(true);
+        $sheet = $reader->load($excel->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $this->assertSame('Top 10 Active Products by Units in Stock', $sheet->getCell('A2')->getValue());
+        $this->assertSame(13, $sheet->getCell('K3')->getValue());
+        $this->assertSame(4, $sheet->getCell('K12')->getValue());
+        $this->assertStringContainsString('SYN-013', $sheet->getCell('J3')->getValue());
+        $this->assertStringNotContainsString('SYN-002', implode(' ', array_map(fn (int $row): string => (string) $sheet->getCell('J'.$row)->getValue(), range(3, 12))));
+        $this->assertCount(1, $sheet->getChartCollection());
+        $chart = $sheet->getChartCollection()[0];
+        $this->assertSame('Top 10 Active Products by Units in Stock', $chart->getTitle()->getCaptionText());
+        $this->assertSame("'Inventory Report'!\$K\$3:\$K\$12", $chart->getPlotArea()->getPlotGroupByIndex(0)->getPlotValues()[0]->getDataSource());
+        $this->assertSame("'Inventory Report'!\$J\$3:\$J\$12", $chart->getPlotArea()->getPlotGroupByIndex(0)->getPlotCategories()[0]->getDataSource());
+        $archive = new ZipArchive;
+        $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+        $this->assertStringContainsString('ptCount val="10"', $archive->getFromName('xl/charts/chart1.xml'));
+        $archive->close();
+        $productRow = $this->spreadsheetSectionDataRow($sheet, 'All Active Products');
+        $productCodes = array_map(fn (int $row): string => (string) $sheet->getCell('A'.$row)->getValue(), range($productRow, $productRow + 11));
+        $this->assertContains('SYN-001', $productCodes);
+        $this->assertContains('SYN-013', $productCodes);
+        $this->assertNotContains('SYN-002', $productCodes);
+
+        $pdf = $this->get(route('reports.inventory.export', ['format' => 'pdf']));
+        $pdf->assertOk();
+        $this->assertSame(1, substr_count($pdf->getContent(), '/Subtype /Image'));
+        $html = view('reports.exports.inventory', [
+            'products' => app(ReportService::class)->inventoryProducts(),
+            'lowStockProducts' => collect(),
+            'adjustments' => collect(),
+            'stats' => ['product_count' => 12, 'total_units' => 90, 'stock_value' => 9000],
+            'lowStockCount' => 0,
+            'stockChartImage' => app(ReportChartImage::class)->stockBars(ReportChartImage::topStockProducts(app(ReportService::class)->inventoryProducts())),
+        ])->render();
+        $this->assertStringContainsString('Top 10 Active Products by Units in Stock', $html);
+        $this->assertSame(1, substr_count($html, 'src="data:image/png;base64,'));
+    }
+
+    public function test_empty_inventory_exports_show_an_empty_stock_graph(): void
+    {
+        [$owner, $first, $second] = $this->createProductsWithRecordedAndUnknownDates();
+        foreach ([$first, $second] as $product) {
+            $product->update(['status' => 'archived']);
+            $product->delete();
+        }
+
+        $excel = $this->actingAs($owner)->get(route('reports.inventory.export', ['format' => 'excel']));
+
+        $excel->assertOk();
+        $reader = IOFactory::createReader('Xlsx');
+        $reader->setIncludeCharts(true);
+        $sheet = $reader->load($excel->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $this->assertSame('No active products', $sheet->getCell('J3')->getValue());
+        $this->assertSame(0, $sheet->getCell('K3')->getValue());
+        $this->assertCount(1, $sheet->getChartCollection());
+        $this->assertSame("'Inventory Report'!\$K\$3:\$K\$3", $sheet->getChartCollection()[0]->getPlotArea()->getPlotGroupByIndex(0)->getPlotValues()[0]->getDataSource());
+
+        $pdf = $this->get(route('reports.inventory.export', ['format' => 'pdf']));
+        $pdf->assertOk();
+        $this->assertSame(1, substr_count($pdf->getContent(), '/Subtype /Image'));
+        $image = app(ReportChartImage::class)->stockBars(ReportChartImage::topStockProducts(collect()));
+        $this->assertSame([1000, 160], array_slice(getimagesizefromstring(base64_decode($image)), 0, 2));
     }
 
     /**

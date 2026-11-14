@@ -10,9 +10,11 @@ use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantResponseValidator;
 use App\Services\GeminiClient;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
+use Tests\Support\FakeGeminiClient;
 use Tests\TestCase;
 
 class AssistantControllerTest extends TestCase
@@ -722,6 +724,63 @@ class AssistantControllerTest extends TestCase
         $third->assertJsonPath('result.status', 'disabled');
         $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
             ->assertJsonPath('result.status', 'declined');
+    }
+
+    public function test_owner_can_reply_naturally_to_sales_clarification_without_a_provider_call(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => "I'd like totals, please"])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Which period for sales totals: today, yesterday, this week, this month, or this year?')
+            ->assertJsonMissingPath('result.visit_context');
+    }
+
+    public function test_owner_can_complete_natural_sales_clarification_and_follow_up_with_a_local_fake(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => "I'd like totals, please"])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'Of course! For which period: today, yesterday, this week, this month, or this year?');
+        $this->postJson(route('assistant.ask'), ['question' => 'Today, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for daily on 2026-11-14: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'And what about yesterday?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for daily on 2026-11-13: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-13')
+            ->assertJsonMissingPath('result.visit_context');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_owner_can_phrase_the_latest_unpaid_sale_naturally_without_a_provider_call(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Could you pull up the most recent unpaid sale?'])
+            ->assertExactJson(['result' => [
+                'status' => 'answered',
+                'message' => 'No pending unpaid sale with a positive balance was found.',
+            ]]);
     }
 
     public function test_unpaid_clarification_can_follow_into_a_local_sale_without_a_provider_call(): void

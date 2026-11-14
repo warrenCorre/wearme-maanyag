@@ -170,6 +170,59 @@ class AssistantQuestionPolicyTest extends TestCase
         $this->assertSame('2026-11-06', $result['date']);
     }
 
+    public function test_a_combined_conversational_leadin_resolves_only_a_verified_sales_follow_up(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $result = $policy->evaluate('And what about yesterday?', $date, ['intent' => 'sales_summary']);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame('sales_summary', $result['intent']);
+        $this->assertSame('daily', $result['period']);
+        $this->assertSame('2026-11-06', $result['date']);
+        $this->assertNull($result['reason']);
+        $this->assertFalse($policy->evaluate('And what about yesterday?', $date)['allowed']);
+        $this->assertFalse($policy->evaluate('And what about yesterday?', $date, ['intent' => 'inventory_summary'])['allowed']);
+    }
+
+    public function test_polite_clarification_replies_keep_the_approved_choice_and_never_skip_a_period(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $goal = $policy->evaluate("I'd like totals, please", $date, ['pending' => 'sales_goal']);
+        $period = $policy->evaluate('Yesterday, please', $date, ['pending' => 'sales_period']);
+
+        $this->assertSame('sales_period', $goal['clarification']);
+        $this->assertNull($goal['safe_question']);
+        $this->assertSame('sales_summary', $period['intent']);
+        $this->assertSame('daily', $period['period']);
+        $this->assertSame('2026-11-06', $period['date']);
+        $this->assertFalse($policy->evaluate("I'd like totals, please", $date)['allowed']);
+        $this->assertFalse($policy->evaluate('Yesterday, please', $date)['allowed']);
+
+        foreach (['I want totals for Ana, please', 'Please settle the sales totals', 'And what about yesterday for Customer Ana?'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date, ['pending' => 'sales_goal', 'intent' => 'sales_summary'])['allowed'], $question);
+        }
+    }
+
+    public function test_a_polite_unpaid_choice_stays_aggregate_or_explicitly_chooses_a_local_sale(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-07');
+
+        $aggregate = $policy->evaluate('I want the aggregate unpaid balance, please', $date, ['pending' => 'unpaid_goal']);
+        $latest = $policy->evaluate('Could you show me the latest one, please', $date, ['pending' => 'unpaid_goal']);
+
+        $this->assertSame('unpaid_summary', $aggregate['intent']);
+        $this->assertStringContainsString('aggregate pending sale counts', $aggregate['safe_question']);
+        $this->assertSame('latest_unpaid_sale', $latest['intent']);
+        $this->assertNull($latest['safe_question']);
+        $this->assertFalse($policy->evaluate('Could you show me the latest one, please', $date)['allowed']);
+        $this->assertFalse($policy->evaluate('I want the latest one for Customer Ana, please', $date, ['pending' => 'unpaid_goal'])['allowed']);
+    }
+
     public function test_it_never_uses_visit_context_to_bypass_customer_write_or_ambiguity_guards(): void
     {
         $policy = app(AssistantQuestionPolicy::class);
@@ -305,7 +358,7 @@ class AssistantQuestionPolicyTest extends TestCase
     {
         $policy = app(AssistantQuestionPolicy::class);
 
-        foreach (['Show the latest unpaid sale', 'Latest pending sale', 'Most recent pending transaction', 'What about the latest unpaid sale?', 'Hi, show me the latest unpaid sale!'] as $question) {
+        foreach (['Show the latest unpaid sale', 'Latest pending sale', 'Most recent pending transaction', 'What about the latest unpaid sale?', 'Hi, show me the latest unpaid sale!', 'Could you pull up the most recent unpaid sale?'] as $question) {
             $result = $policy->evaluate($question, CarbonImmutable::parse('2026-11-07'));
 
             $this->assertTrue($result['allowed'], $question);

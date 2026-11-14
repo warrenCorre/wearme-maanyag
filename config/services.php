@@ -41,6 +41,7 @@ return [
         'embedding_model' => env('GEMINI_EMBEDDING_MODEL', 'gemini-embedding-001'),
         'allow_store_data' => env('GEMINI_ALLOW_STORE_DATA', false),
         'allow_conversation' => env('GEMINI_ALLOW_CONVERSATION', false),
+        'demo_fake' => env('ASSISTANT_DEMO_FAKE', false),
     ],
 
 ];

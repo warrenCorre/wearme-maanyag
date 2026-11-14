@@ -20,6 +20,9 @@
     .cards .warn { background-color: #fffbeb; }
 
     .section-title { font-size: 10px; color: #e11d48; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 22px 0 8px 0; }
+    .chart-block { page-break-inside: avoid; margin-top: 12px; }
+    .chart-block .section-title { margin: 0 0 5px 0; }
+    .chart-block img { display: block; width: 100%; height: auto; }
 
     table.report th { background-color: #0f172a; color: #ffffff; font-size: 9.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px; text-align: left; border: 1px solid #0f172a; }
     table.report td { padding: 7px 8px; font-size: 11px; border: 1px solid #cbd5e1; }

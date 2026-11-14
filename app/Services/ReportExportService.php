@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ReportExportService
 {
-    public function __construct(private ReportService $reportService) {}
+    public function __construct(private ReportService $reportService, private ReportChartImage $chartImage) {}
 
     public function salesReport(CarbonInterface $date, string $format): Response
     {
@@ -24,9 +24,15 @@ class ReportExportService
         $filename = 'sales-report-all-periods-'.$date->toDateString();
 
         if ($format === 'pdf') {
+            $chartImages = [];
+            foreach ($reports as $period => $report) {
+                $chartImages[$period] = $this->chartImage->verticalBars($report['chart']['labels'], $report['chart']['totals'], 'PHP');
+            }
+
             return Pdf::loadView('reports.exports.sales', [
                 'reports' => $reports,
                 'date' => $date->toDateString(),
+                'chartImages' => $chartImages,
             ])->download($filename.'.pdf');
         }
 
@@ -41,12 +47,15 @@ class ReportExportService
         $filename = 'inventory-report-'.now()->toDateString();
 
         if ($format === 'pdf') {
+            $topStockProducts = ReportChartImage::topStockProducts($products);
+
             return Pdf::loadView('reports.exports.inventory', [
                 'products' => $products,
                 'lowStockProducts' => $lowStockProducts,
                 'adjustments' => $this->reportService->inventoryAdjustments(),
                 'stats' => $stats,
                 'lowStockCount' => $lowStockProducts->count(),
+                'stockChartImage' => $this->chartImage->stockBars($topStockProducts),
             ])->download($filename.'.pdf');
         }
 
