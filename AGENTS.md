@@ -12,6 +12,7 @@
 - Ask before destructive database migrations.
 - Never expose secrets or .env values.
 - Run relevant tests after changes.
+- For every approved application change or slice, browser-check the affected workflow yourself using only fictional/DEMO data before committing, in addition to automated tests. Report exactly what you observed; your check does not replace the user's independent browser sign-off. If browser verification is blocked, report it and do not claim a pass or commit an unverified application slice. For rules/documentation-only edits with no browser behavior, explain why no browser check applies. Never call live Gemini, use real customer data, or change sharing flags for testing.
 - Explain modifications and remaining issues.
 - After each approved code slice, give a short, approachable explanation of the changed code (with a small example when useful), report verification and remaining issues, and give the local commit hash and message.
 - The assistant stages and commits each approved, verified code slice locally. The user handles all pushes and other GitHub actions; never push on the user's behalf.
