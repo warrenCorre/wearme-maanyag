@@ -183,6 +183,33 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_yearly_report_excludes_sales_from_neighboring_years(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-OLD-YEAR', '10.00', '2025-12-31 23:59:59'],
+            ['SYN-JANUARY-START', '40.00', '2026-01-01 00:00:00'],
+            ['SYN-DECEMBER-END', '60.00', '2026-12-31 23:59:59'],
+            ['SYN-NEW-YEAR', '20.00', '2027-01-01 00:00:00'],
+        ] as [$number, $total, $date]) {
+            $this->createReportSale($owner, $number, $total, $date);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'yearly', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk();
+        $this->assertSame(['transaction_count' => 2, 'total_sales' => 100.0, 'average_sale' => 50.0], $response['report']['summary']);
+        $this->assertSame(40.0, $response['report']['chart']['totals'][0]);
+        $this->assertSame(60.0, $response['report']['chart']['totals'][11]);
+        $this->assertSame([
+            ['label' => 'Jan', 'transactions' => 1, 'total' => 40.0],
+            ['label' => 'Dec', 'transactions' => 1, 'total' => 60.0],
+        ], $response['report']['rows']);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
