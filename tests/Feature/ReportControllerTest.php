@@ -73,6 +73,61 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+        foreach (['paid', 'unpaid'] as $status) {
+            SalesTransaction::query()->create([
+                'transaction_no' => 'SYN-'.strtoupper($status),
+                'sale_type' => 'walk_in',
+                'online_platform' => '',
+                'total_amount' => '100.00',
+                'payment_status' => $status,
+                'recorded_by' => $owner->id,
+                'transaction_date' => '2026-11-14 09:00:00',
+            ]);
+        }
+
+        $this->actingAs($owner)->get(route('reports.index', ['period' => 'daily', 'date' => '2026-11-14']))
+            ->assertOk()
+            ->assertSee('recorded sales')
+            ->assertDontSee('completed sales');
+    }
+
+    public function test_reports_use_singular_recorded_sale_for_one_transaction(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+        SalesTransaction::query()->create([
+            'transaction_no' => 'SYN-UNPAID',
+            'sale_type' => 'walk_in',
+            'online_platform' => '',
+            'total_amount' => '100.00',
+            'payment_status' => 'unpaid',
+            'recorded_by' => $owner->id,
+            'transaction_date' => '2026-11-14 09:00:00',
+        ]);
+
+        $this->actingAs($owner)->get(route('reports.index', ['period' => 'daily', 'date' => '2026-11-14']))
+            ->assertOk()
+            ->assertSee('recorded sale</p>', false)
+            ->assertDontSee('completed sale');
+    }
+
+    public function test_sales_pdf_view_labels_transactions_as_recorded_sales(): void
+    {
+        $html = view('reports.exports.sales', [
+            'report' => [
+                'summary' => ['transaction_count' => 2, 'total_sales' => 200.0, 'average_sale' => 100.0],
+                'rows' => [['label' => '09:00', 'transactions' => 2, 'total' => 200.0]],
+            ],
+            'period' => 'daily',
+            'rangeLabel' => 'Nov 14, 2026',
+        ])->render();
+
+        $this->assertStringContainsString('recorded sales', $html);
+        $this->assertStringNotContainsString('completed sales', $html);
+    }
+
     public function test_inventory_pdf_view_includes_recorded_and_unknown_collection_dates(): void
     {
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();

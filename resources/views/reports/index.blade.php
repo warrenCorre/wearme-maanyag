@@ -63,7 +63,7 @@
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
                 <p class="text-sm font-black uppercase tracking-wide text-rose-500">Transactions</p>
                 <p class="mt-3 text-3xl font-black tabular-nums">{{ $report['summary']['transaction_count'] }}</p>
-                <p class="mt-2 text-sm font-medium text-slate-500">completed sale{{ $report['summary']['transaction_count'] === 1 ? '' : 's' }}</p>
+                <p class="mt-2 text-sm font-medium text-slate-500">recorded sale{{ $report['summary']['transaction_count'] === 1 ? '' : 's' }}</p>
             </div>
 
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
