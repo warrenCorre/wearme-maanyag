@@ -769,6 +769,29 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_can_ask_for_previous_sales_periods_and_follow_up_with_the_local_fake(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-01-01 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Last month'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'How were sales last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2025-12-01: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'And what about last year?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for yearly on 2025-01-01: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales last month and this week'])
+            ->assertJsonPath('result.status', 'declined');
+
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_phrase_the_latest_unpaid_sale_naturally_without_a_provider_call(): void
     {
         $owner = $this->createUser('store_owner');

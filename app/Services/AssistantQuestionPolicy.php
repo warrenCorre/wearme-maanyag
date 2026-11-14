@@ -61,7 +61,7 @@ class AssistantQuestionPolicy
             }
         }
 
-        if ($pending === 'sales_period' && in_array($choice, ['today', 'yesterday', 'this week', 'this month', 'this year'], true)) {
+        if ($pending === 'sales_period' && in_array($choice, ['today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year'], true)) {
             return $this->evaluate('Show me sales for '.$choice, $date);
         }
 
@@ -92,17 +92,23 @@ class AssistantQuestionPolicy
             return $this->clarification($date, 'unpaid_goal');
         }
 
-        if (preg_match('/^(?:(?:show|give|summarize)\s+(?:me\s+)?|what(?:\s+(?:is|are|was|were)|s)\s+)?(?:the\s+)?(?:sales(?:\s+summary)?|total sales|sales total|revenue summary|transaction summary)\s+(?:for|in|during)\s+(today|yesterday|this week|this month|this year|daily|weekly|monthly|yearly)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:(?:show|give|summarize)\s+(?:me\s+)?|what(?:\s+(?:is|are|was|were)|s)\s+)?(?:the\s+)?(?:sales(?:\s+summary)?|total sales|sales total|revenue summary|transaction summary)\s+(?:for|in|during)\s+(today|yesterday|this week|this month|this year|last week|last month|last year|daily|weekly|monthly|yearly)$/', $normalizedQuestion, $matches) === 1) {
             $periodPhrase = $matches[1];
             $period = match ($periodPhrase) {
                 'today', 'yesterday', 'daily' => 'daily',
-                'this week', 'weekly' => 'weekly',
-                'this month', 'monthly' => 'monthly',
-                'this year', 'yearly' => 'yearly',
+                'this week', 'last week', 'weekly' => 'weekly',
+                'this month', 'last month', 'monthly' => 'monthly',
+                'this year', 'last year', 'yearly' => 'yearly',
             };
 
             if ($periodPhrase === 'yesterday') {
                 $date = $date->subDay();
+            } elseif ($periodPhrase === 'last week') {
+                $date = $date->subWeek();
+            } elseif ($periodPhrase === 'last month') {
+                $date = $date->subMonthNoOverflow();
+            } elseif ($periodPhrase === 'last year') {
+                $date = $date->subYearNoOverflow();
             }
 
             return $this->allowed(
@@ -162,7 +168,7 @@ class AssistantQuestionPolicy
             $followUp = preg_replace('/^(?:(?:(?:and|also|then)\s+)?(?:what|how)\s+about|(?:and|also|then))(?:\s+the)?\s+/', '', $normalizedQuestion) ?? '';
 
             if ($followUp !== $normalizedQuestion) {
-                if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year)$/', $followUp) === 1) {
+                if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year|last week|last month|last year)$/', $followUp) === 1) {
                     return $this->evaluate('Show me '.$followUp, $date);
                 }
 
@@ -172,7 +178,7 @@ class AssistantQuestionPolicy
                     'best sellers', 'best selling products' => 'List best-selling products',
                     'collection dates', 'recently collected products' => 'List recently collected products',
                     'unpaid balance', 'outstanding balance' => 'What is the total unpaid balance?',
-                    'today', 'yesterday', 'this week', 'this month', 'this year' => $visitContext['intent'] === 'sales_summary'
+                    'today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year' => $visitContext['intent'] === 'sales_summary'
                         ? 'Show me sales for '.$followUp : null,
                     default => null,
                 };
