@@ -260,7 +260,9 @@ class AssistantQuestionPolicy
         $question = str_replace(["'", '’'], '', $question);
         $question = preg_replace('/[?.!,]+$/u', '', $question) ?? '';
 
-        return preg_replace('/\s+/u', ' ', $question) ?? '';
+        $question = preg_replace('/\s+/u', ' ', $question) ?? '';
+
+        return preg_replace('/\b(?:previous|prior) (week|month|year)\b/u', 'last $1', $question) ?? '';
     }
 
     /**

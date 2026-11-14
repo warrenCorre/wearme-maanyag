@@ -121,6 +121,33 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_previous_and_prior_calendar_phrases_keep_the_verified_sales_periods_and_guards(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach ([
+            'How were sales previous week?' => ['weekly', '2025-12-25'],
+            'Show me sales for prior month' => ['monthly', '2025-12-01'],
+            'What was the revenue previous year?' => ['yearly', '2025-01-01'],
+        ] as $question => [$period, $expectedDate]) {
+            $decision = $policy->evaluate($question, $date);
+
+            $this->assertSame('sales_summary', $decision['intent'], $question);
+            $this->assertSame($period, $decision['period'], $question);
+            $this->assertSame($expectedDate, $decision['date'], $question);
+            $this->assertSame("Summarize {$period} sales for {$expectedDate} using only the verified context.", $decision['safe_question'], $question);
+        }
+
+        $followUp = $policy->evaluate('Prior month', $date, ['intent' => 'sales_summary']);
+        $this->assertSame('monthly', $followUp['period']);
+        $this->assertSame('2025-12-01', $followUp['date']);
+
+        foreach (['Prior month', 'Previous week and last year', 'Previous month for Customer Ana', 'Delete prior year sales'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_previous_period_replies_and_follow_ups_only_inherit_a_verified_sales_topic(): void
     {
         $policy = app(AssistantQuestionPolicy::class);

@@ -832,6 +832,24 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_can_ask_for_prior_calendar_sales_without_sending_raw_wording_to_the_provider(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));
+        config(['services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How were sales previous month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2026-10-14: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'Prior week'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for weekly on 2026-11-07: 0 transactions totaling PHP 0.');
+
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_phrase_the_latest_unpaid_sale_naturally_without_a_provider_call(): void
     {
         $owner = $this->createUser('store_owner');
