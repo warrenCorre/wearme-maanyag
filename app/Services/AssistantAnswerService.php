@@ -19,6 +19,7 @@ class AssistantAnswerService
         private AssistantConversationService $conversationService,
         private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
         private AssistantDamagedAdjustmentService $damagedAdjustmentService,
+        private AssistantStockAdjustmentService $stockAdjustmentService,
         private AssistantSafeChatService $safeChatService,
         private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantModelIntentService $modelIntentService,
@@ -155,6 +156,20 @@ class AssistantAnswerService
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded damaged-item adjustments',
+                    'as_of' => $decision['date'],
+                ]],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+            ];
+        }
+
+        if ($decision['intent'] === 'stock_adjustments') {
+            return [
+                'status' => 'answered',
+                'message' => $this->stockAdjustmentService->answer(),
+                'sources' => [[
+                    'type' => 'inventory_adjustments',
+                    'label' => 'Recorded non-sales stock adjustments',
                     'as_of' => $decision['date'],
                 ]],
                 'answer_type' => 'fact',

@@ -904,6 +904,31 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_stock_adjustment_summary_keeps_the_gate_and_reports_only_aggregate_directions_to_the_owner(): void
+    {
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        config(['services.gemini.allow_store_data' => false]);
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Summarize stock adjustments'])
+            ->assertJsonPath('result.status', 'disabled');
+
+        config(['services.gemini.allow_store_data' => true]);
+        $this->postJson(route('assistant.ask'), ['question' => 'Summarize stock adjustments'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded non-sales stock adjustments (all time): 0 increases (0 units added), 0 decreases (0 units removed). Reasons and product details are not shown.')
+            ->assertJsonPath('result.sources.0.type', 'inventory_adjustments');
+        $this->actingAs($this->createUser('cashier'))->postJson(route('assistant.ask'), ['question' => 'Summarize stock adjustments'])
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_use_screened_prior_month_conversational_sales_with_the_fixed_local_fake(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-14 10:00:00'));

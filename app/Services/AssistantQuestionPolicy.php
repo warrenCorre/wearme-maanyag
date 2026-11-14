@@ -163,6 +163,19 @@ class AssistantQuestionPolicy
             );
         }
 
+        if (in_array($normalizedQuestion, [
+            'summarize stock adjustments',
+            'summarize non sales stock adjustments',
+            'how many stock adjustments',
+        ], true)) {
+            return $this->allowed(
+                'stock_adjustments',
+                null,
+                $date,
+                'Report only recorded non-sales stock adjustment counts and units by direction without reasons or product details.',
+            );
+        }
+
         if (preg_match('/^(?:(?:show|list|give|summarize)\s+(?:me\s+)?|what\s+(?:are|is)\s+)?(?:the\s+)?(?:best(?: selling)? products?|top(?: selling)? products?|best sellers|top sellers)$/', $normalizedQuestion) === 1) {
             return $this->allowed(
                 'best_sellers',

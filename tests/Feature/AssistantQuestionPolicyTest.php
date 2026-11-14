@@ -127,6 +127,22 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_stock_adjustment_summary_is_a_bounded_directional_skill_not_a_reason_or_product_lookup(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-14');
+
+        foreach (['Summarize stock adjustments', 'Summarize non-sales stock adjustments', 'How many stock adjustments?'] as $question) {
+            $decision = $policy->evaluate($question, $date);
+            $this->assertSame('stock_adjustments', $decision['intent'], $question);
+            $this->assertSame('Report only recorded non-sales stock adjustment counts and units by direction without reasons or product details.', $decision['safe_question']);
+        }
+
+        foreach (['Show stock adjustment reasons', 'How many stock adjustments for Synthetic Jacket?', 'How many stock adjustments last quarter?', 'Delete stock adjustments'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(
