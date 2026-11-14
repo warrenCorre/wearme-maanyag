@@ -481,7 +481,7 @@ class ReportControllerTest extends TestCase
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
 
         $export = new InventoryReportExport(collect([$datedProduct, $legacyProduct]));
-        $rows = $export->collection()->all();
+        $rows = iterator_to_array($export->generator(), false);
 
         $this->assertSame('Collection Date', $export->headings()[3]);
         $this->assertSame('2026-10-15', $rows[0][3]);
@@ -492,7 +492,7 @@ class ReportControllerTest extends TestCase
     {
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
 
-        $rows = (new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->collection()->all();
+        $rows = iterator_to_array((new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->generator(), false);
 
         $this->assertSame('Pants', $rows[0][2]);
         $this->assertSame('Pants', $rows[1][2]);
@@ -505,10 +505,10 @@ class ReportControllerTest extends TestCase
         $archivedProduct->update(['status' => 'archived']);
         $archivedProduct->delete();
 
-        $rows = (new InventoryReportExport(
+        $rows = iterator_to_array((new InventoryReportExport(
             collect([$activeProduct->load('category')]),
             InventoryAdjustment::with(['product', 'adjustedBy'])->get(),
-        ))->collection()->all();
+        ))->generator(), false);
 
         $this->assertSame('SYN-001', $rows[0][0]);
         $this->assertSame([''], $rows[1]);
@@ -525,7 +525,7 @@ class ReportControllerTest extends TestCase
     {
         [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
 
-        $rows = (new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->collection()->all();
+        $rows = iterator_to_array((new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->generator(), false);
 
         $this->assertSame(['Stock Adjustment History'], $rows[3]);
         $this->assertSame(['No non-sales stock adjustments recorded yet.'], $rows[5]);
@@ -536,7 +536,7 @@ class ReportControllerTest extends TestCase
         [, $product] = $this->createProductsWithRecordedAndUnknownDates();
         $product->product_name = '=1+1';
 
-        $rows = (new InventoryReportExport(collect([$product])))->collection()->all();
+        $rows = iterator_to_array((new InventoryReportExport(collect([$product])))->generator(), false);
 
         $this->assertSame("'=1+1", $rows[0][1]);
     }
@@ -557,6 +557,27 @@ class ReportControllerTest extends TestCase
         $this->assertSame('Synthetic Pants', $sheet->getCell('B6')->getValue());
         $this->assertSame("'=1+1", $sheet->getCell('G6')->getValue());
         $this->assertSame('Synthetic Owner', $sheet->getCell('H6')->getValue());
+    }
+
+    public function test_inventory_excel_download_includes_adjustments_beyond_the_first_database_chunk(): void
+    {
+        [$owner, $activeProduct, $archivedProduct] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($archivedProduct, $owner, 'decrease', 1, 2, 1, 'Old archived adjustment');
+        $archivedProduct->update(['status' => 'archived']);
+        $archivedProduct->delete();
+
+        for ($number = 1; $number <= 204; $number++) {
+            $this->createReportAdjustment($activeProduct, $owner, 'increase', 1, 2, 3, "Synthetic adjustment {$number}");
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.inventory.export', ['format' => 'excel']));
+
+        $response->assertOk();
+        $sheet = IOFactory::load($response->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $this->assertSame('Synthetic adjustment 204', $sheet->getCell('G6')->getValue());
+        $this->assertSame('Old archived adjustment', $sheet->getCell('G210')->getValue());
+        $this->assertSame('Synthetic Pants', $sheet->getCell('B210')->getValue());
+        $this->assertSame(210, $sheet->getHighestDataRow());
     }
 
     private function createReportSale(User $owner, string $number, string $total, string $date): void
