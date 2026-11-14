@@ -105,7 +105,7 @@ class ReportService
             $rows = SalesTransaction::query()
                 ->where('transaction_date', '>=', $start)
                 ->where('transaction_date', '<', $end)
-                ->selectRaw('MONTH(transaction_date) as sale_month')
+                ->selectRaw($this->monthBucketExpression().' as sale_month')
                 ->selectRaw('SUM(total_amount) as month_total')
                 ->groupBy('sale_month')
                 ->pluck('month_total', 'sale_month');
@@ -147,7 +147,7 @@ class ReportService
     {
         $groupBy = match ($period) {
             'daily' => $this->hourBucketExpression(),
-            'yearly' => 'MONTH(transaction_date)',
+            'yearly' => $this->monthBucketExpression(),
             default => 'DATE(transaction_date)',
         };
 
@@ -181,5 +181,12 @@ class ReportService
         return DB::connection()->getDriverName() === 'sqlite'
             ? "CAST(strftime('%H', transaction_date) AS INTEGER)"
             : 'HOUR(transaction_date)';
+    }
+
+    private function monthBucketExpression(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(strftime('%m', transaction_date) AS INTEGER)"
+            : 'MONTH(transaction_date)';
     }
 }

@@ -73,6 +73,38 @@ class ReportControllerTest extends TestCase
         ], $response['report']['rows']);
     }
 
+    public function test_yearly_report_groups_sales_by_month_in_the_test_database(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        foreach ([
+            ['SYN-JANUARY', '120.00', '2026-01-15 09:15:00'],
+            ['SYN-NOVEMBER', '80.00', '2026-11-14 14:45:00'],
+        ] as [$number, $total, $date]) {
+            SalesTransaction::query()->create([
+                'transaction_no' => $number,
+                'sale_type' => 'walk_in',
+                'online_platform' => '',
+                'total_amount' => $total,
+                'payment_status' => 'paid',
+                'recorded_by' => $owner->id,
+                'transaction_date' => $date,
+            ]);
+        }
+
+        $response = $this->actingAs($owner)->get(route('reports.index', [
+            'period' => 'yearly', 'date' => '2026-11-14',
+        ]));
+
+        $response->assertOk();
+        $this->assertSame(120.0, $response['report']['chart']['totals'][0]);
+        $this->assertSame(80.0, $response['report']['chart']['totals'][10]);
+        $this->assertSame([
+            ['label' => 'Jan', 'transactions' => 1, 'total' => 120.0],
+            ['label' => 'Nov', 'transactions' => 1, 'total' => 80.0],
+        ], $response['report']['rows']);
+    }
+
     public function test_reports_label_paid_and_unpaid_transactions_as_recorded_sales(): void
     {
         [$owner] = $this->createProductsWithRecordedAndUnknownDates();
