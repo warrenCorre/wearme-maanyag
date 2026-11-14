@@ -7,17 +7,17 @@ class AssistantIntentRouter
     private const WORDS = [
         'a', 'about', 'all', 'amount', 'an', 'and', 'any', 'are', 'at', 'balance', 'balances',
         'been', 'best', 'can', 'check', 'collected', 'collection', 'collections', 'could',
-        'count', 'counts', 'current', 'currently', 'date', 'dates', 'do', 'doing', 'far',
-        'find', 'for', 'from', 'get', 'give', 'going', 'has', 'have', 'how', 'i', 'in',
+        'count', 'counts', 'current', 'currently', 'date', 'dates', 'did', 'do', 'doing', 'far',
+        'find', 'for', 'from', 'get', 'give', 'going', 'has', 'have', 'how', 'hows', 'i', 'in',
         'inventory', 'is', 'item', 'items', 'latest', 'lately', 'left', 'list', 'looking',
-        'low', 'many', 'me', 'money', 'month', 'most', 'much', 'my', 'newest', 'number',
+        'low', 'make', 'many', 'me', 'money', 'month', 'most', 'much', 'my', 'newest', 'number',
         'of', 'on', 'one', 'or', 'our', 'out', 'outstanding', 'owe', 'owed', 'owing',
-        'payment', 'payments', 'pending', 'please', 'product', 'products', 'quantity',
+        'payment', 'payments', 'pending', 'please', 'product', 'products', 'pull', 'quantity',
         'quantities', 'recent', 'recently', 'revenue', 'running', 'sale', 'sales', 'see',
         'sell', 'sellers', 'selling', 'shop', 'show', 'so', 'some', 'sold', 'stock',
         'store', 'still', 'summarize', 'summary', 'tell', 'the', 'there', 'this',
         'today', 'top', 'total', 'totals', 'transaction', 'transactions', 'unpaid',
-        'units', 'us', 'value', 'was', 'we', 'week', 'what', 'whats', 'when', 'which',
+        'units', 'up', 'us', 'value', 'was', 'we', 'week', 'what', 'whats', 'when', 'which',
         'with', 'year', 'yesterday', 'you', 'your',
     ];
 
@@ -44,7 +44,8 @@ class AssistantIntentRouter
         $bestSellers = $this->hasAny($words, ['best', 'top', 'sellers'])
             || ($this->hasAny($words, ['sell', 'selling', 'sold']) && $this->hasAny($words, ['most']));
         $collections = $this->hasAny($words, ['collected', 'collection', 'collections']);
-        $inventory = $this->hasAny($words, ['inventory', 'stock']);
+        $inventory = $this->hasAny($words, ['inventory', 'stock'])
+            || ($this->hasAny($words, ['low']) && $this->hasAny($words, ['product', 'products', 'item', 'items']));
         $salesTerm = $this->hasAny($words, ['sale', 'sales', 'transaction', 'transactions', 'revenue']);
         $sales = $salesTerm && ! $unpaid;
 

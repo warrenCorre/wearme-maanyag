@@ -16,6 +16,7 @@ class AssistantIntentRouterTest extends TestCase
             'how much is still owed' => ['type' => 'question', 'value' => 'What is the total unpaid balance?'],
             'how many pending sales do we have' => ['type' => 'question', 'value' => 'How many unpaid transactions?'],
             'could you show me the newest outstanding sale' => ['type' => 'question', 'value' => 'Show the latest unpaid sale'],
+            'could you pull up the most recent unpaid sale' => ['type' => 'question', 'value' => 'Show the latest unpaid sale'],
             'latest pending' => ['type' => 'clarification', 'value' => 'latest_pending_sale_confirmation'],
             'show me the latest pending' => ['type' => 'clarification', 'value' => 'latest_pending_sale_confirmation'],
             'what about the latest pending' => ['type' => 'clarification', 'value' => 'latest_pending_sale_confirmation'],
@@ -24,6 +25,9 @@ class AssistantIntentRouterTest extends TestCase
             'can you show my sales this week' => ['type' => 'question', 'value' => 'Show me sales for this week'],
             'what products are running low in stock' => ['type' => 'question', 'value' => 'List low-stock products'],
             'how many items are in stock' => ['type' => 'question', 'value' => 'Summarize inventory status'],
+            'hows our stock looking' => ['type' => 'question', 'value' => 'Summarize inventory status'],
+            'are any products running low' => ['type' => 'question', 'value' => 'List low-stock products'],
+            'how much did we make in sales yesterday' => ['type' => 'question', 'value' => 'Show me sales for yesterday'],
             'which items sell the most' => ['type' => 'question', 'value' => 'List best-selling products'],
             'what have we collected recently' => ['type' => 'question', 'value' => 'List recently collected products'],
         ] as $question => $expected) {
@@ -65,6 +69,9 @@ class AssistantIntentRouterTest extends TestCase
             'sales week',
             'unpaid sales this week',
             'what is the weather today',
+            'are any products running low for customer ana',
+            'list all products running low',
+            'how much did we make in sales for ana yesterday',
             'how much is owed for 09234567891',
         ] as $question) {
             $this->assertNull($router->route($question), $question);
