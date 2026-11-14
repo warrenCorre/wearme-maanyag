@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\SalesTransaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 class ReportControllerTest extends TestCase
@@ -444,6 +445,67 @@ class ReportControllerTest extends TestCase
 
         $this->assertSame('Pants', $rows[0][2]);
         $this->assertSame('Pants', $rows[1][2]);
+    }
+
+    public function test_inventory_excel_rows_include_archived_product_adjustments_as_a_separate_table(): void
+    {
+        [$owner, $activeProduct, $archivedProduct] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($archivedProduct, $owner, 'decrease', 1, 2, 1, '=HYPERLINK("https://example.test","demo")');
+        $archivedProduct->update(['status' => 'archived']);
+        $archivedProduct->delete();
+
+        $rows = (new InventoryReportExport(
+            collect([$activeProduct->load('category')]),
+            InventoryAdjustment::with(['product', 'adjustedBy'])->get(),
+        ))->collection()->all();
+
+        $this->assertSame('SYN-001', $rows[0][0]);
+        $this->assertSame([''], $rows[1]);
+        $this->assertSame(['Stock Adjustment History'], $rows[2]);
+        $this->assertSame(['Recorded', 'Product', 'Direction', 'Quantity', 'Before', 'After', 'Reason', 'Owner'], $rows[3]);
+        $this->assertSame('Synthetic Pants', $rows[4][1]);
+        $this->assertSame('Decrease', $rows[4][2]);
+        $this->assertSame([1, 2, 1], array_slice($rows[4], 3, 3));
+        $this->assertSame('\'=HYPERLINK("https://example.test","demo")', $rows[4][6]);
+        $this->assertSame('Synthetic Owner', $rows[4][7]);
+    }
+
+    public function test_inventory_excel_rows_explain_when_no_adjustment_history_exists(): void
+    {
+        [, $datedProduct, $legacyProduct] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $rows = (new InventoryReportExport(collect([$datedProduct, $legacyProduct])))->collection()->all();
+
+        $this->assertSame(['Stock Adjustment History'], $rows[3]);
+        $this->assertSame(['No non-sales stock adjustments recorded yet.'], $rows[5]);
+    }
+
+    public function test_inventory_excel_treats_product_names_starting_with_a_formula_as_text(): void
+    {
+        [, $product] = $this->createProductsWithRecordedAndUnknownDates();
+        $product->product_name = '=1+1';
+
+        $rows = (new InventoryReportExport(collect([$product])))->collection()->all();
+
+        $this->assertSame("'=1+1", $rows[0][1]);
+    }
+
+    public function test_inventory_excel_download_contains_adjustment_history_as_plain_text(): void
+    {
+        [$owner, , $product] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportAdjustment($product, $owner, 'decrease', 1, 2, 1, '=1+1');
+        $product->update(['status' => 'archived']);
+        $product->delete();
+
+        $response = $this->actingAs($owner)->get(route('reports.inventory.export', ['format' => 'excel']));
+
+        $response->assertOk()->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $spreadsheet = IOFactory::load($response->baseResponse->getFile()->getPathname());
+        $sheet = $spreadsheet->getActiveSheet();
+        $this->assertSame('Stock Adjustment History', $sheet->getCell('A4')->getValue());
+        $this->assertSame('Synthetic Pants', $sheet->getCell('B6')->getValue());
+        $this->assertSame("'=1+1", $sheet->getCell('G6')->getValue());
+        $this->assertSame('Synthetic Owner', $sheet->getCell('H6')->getValue());
     }
 
     private function createReportSale(User $owner, string $number, string $total, string $date): void
