@@ -191,6 +191,29 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_bounded_monthly_adjustment_phrasing_keeps_the_existing_intent_and_rejects_filters(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-14');
+
+        foreach ([
+            'Summarize stock adjustments for last month' => 'stock_adjustments',
+            'Summarize non-sales stock adjustments during this month' => 'stock_adjustments',
+            'How many damaged item adjustments were there this month?' => 'damaged_adjustments',
+            'How many damaged item adjustments were there in last month?' => 'damaged_adjustments',
+        ] as $question => $intent) {
+            $decision = $policy->evaluate($question, $date);
+
+            $this->assertSame($intent, $decision['intent'], $question);
+            $this->assertSame('monthly', $decision['period'], $question);
+            $this->assertSame(str_contains($question, 'last month') ? '2026-10-14' : '2026-11-14', $decision['date'], $question);
+        }
+
+        foreach (['Summarize stock adjustments for last month and this month', 'How many damaged item adjustments were there last month for Synthetic Jacket?', 'How many damaged item adjustments were there last month for customer Ana?', 'Show damaged item reasons for last month'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

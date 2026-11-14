@@ -159,7 +159,7 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments) (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
             if ($matches[1] === 'last month') {
                 $date = $date->subMonthNoOverflow();
             }
@@ -185,7 +185,7 @@ class AssistantQuestionPolicy
             );
         }
 
-        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments) (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
             if ($matches[1] === 'last month') {
                 $date = $date->subMonthNoOverflow();
             }
