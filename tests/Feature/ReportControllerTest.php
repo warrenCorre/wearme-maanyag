@@ -8,6 +8,8 @@ use App\Models\InventoryAdjustment;
 use App\Models\Product;
 use App\Models\SalesTransaction;
 use App\Models\User;
+use App\Services\ReportService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
@@ -412,17 +414,93 @@ class ReportControllerTest extends TestCase
 
     public function test_sales_pdf_view_labels_transactions_as_recorded_sales(): void
     {
+        $report = [
+            'start' => CarbonImmutable::parse('2026-11-14'),
+            'end' => CarbonImmutable::parse('2026-11-14 23:59:59'),
+            'summary' => ['transaction_count' => 2, 'total_sales' => 200.0, 'average_sale' => 100.0],
+            'rows' => [['label' => '09:00', 'transactions' => 2, 'total' => 200.0]],
+        ];
+
         $html = view('reports.exports.sales', [
-            'report' => [
-                'summary' => ['transaction_count' => 2, 'total_sales' => 200.0, 'average_sale' => 100.0],
-                'rows' => [['label' => '09:00', 'transactions' => 2, 'total' => 200.0]],
-            ],
-            'period' => 'daily',
-            'rangeLabel' => 'Nov 14, 2026',
+            'reports' => array_fill_keys(['daily', 'weekly', 'monthly', 'yearly'], $report),
+            'date' => '2026-11-14',
         ])->render();
 
         $this->assertStringContainsString('recorded sales', $html);
         $this->assertStringNotContainsString('completed sales', $html);
+        foreach (['Daily', 'Weekly', 'Monthly', 'Yearly'] as $period) {
+            $this->assertStringContainsString($period.' Sales', $html);
+        }
+        $this->assertStringContainsString('These periods overlap; do not add their totals together.', $html);
+    }
+
+    public function test_sales_exports_include_all_four_periods_for_one_reference_date(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+        $this->createReportSale($owner, 'SYN-TODAY', '100.00', '2026-11-14 09:00:00');
+        $this->createReportSale($owner, 'SYN-YESTERDAY', '50.00', '2026-11-13 10:00:00');
+        $this->createReportSale($owner, 'SYN-OCTOBER', '25.00', '2026-10-10 10:00:00');
+
+        $excel = $this->actingAs($owner)->get(route('reports.sales.export', ['date' => '2026-11-14', 'format' => 'excel']));
+        $excel->assertOk()->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $sheet = IOFactory::load($excel->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $this->assertSame('Periods overlap: do not add the four totals together.', $sheet->getCell('A3')->getValue());
+        $totals = [];
+
+        for ($row = 1; $row <= $sheet->getHighestDataRow(); $row++) {
+            $label = $sheet->getCell('A'.$row)->getValue();
+            if (in_array($label, ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], true)) {
+                $totals[$label] = [
+                    'range' => $sheet->getCell('B'.$row)->getValue(),
+                    'total' => $sheet->getCell('B'.($row + 1))->getValue(),
+                    'transactions' => $sheet->getCell('B'.($row + 2))->getValue(),
+                ];
+            }
+        }
+
+        $this->assertSame(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], array_keys($totals));
+        $this->assertSame(['range' => 'Nov 14, 2026', 'total' => 100.0, 'transactions' => 1], $totals['DAILY']);
+        $this->assertSame(['range' => 'Nov 9, 2026 - Nov 15, 2026', 'total' => 150.0, 'transactions' => 2], $totals['WEEKLY']);
+        $this->assertSame(['range' => 'Nov 1, 2026 - Nov 30, 2026', 'total' => 150.0, 'transactions' => 2], $totals['MONTHLY']);
+        $this->assertSame(['range' => 'Jan 1, 2026 - Dec 31, 2026', 'total' => 175.0, 'transactions' => 3], $totals['YEARLY']);
+
+        $pdf = $this->get(route('reports.sales.export', ['date' => '2026-11-14', 'format' => 'pdf']));
+        $pdf->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $reports = [];
+        foreach (['daily', 'weekly', 'monthly', 'yearly'] as $period) {
+            $reports[$period] = app(ReportService::class)->salesReport($period, CarbonImmutable::parse('2026-11-14'));
+        }
+        $html = view('reports.exports.sales', ['reports' => $reports, 'date' => '2026-11-14'])->render();
+        foreach (['100.00', '150.00', '175.00'] as $amount) {
+            $this->assertStringContainsString('PHP '.$amount, $html);
+        }
+    }
+
+    public function test_sales_excel_export_labels_all_four_periods_when_there_are_no_sales(): void
+    {
+        [$owner] = $this->createProductsWithRecordedAndUnknownDates();
+
+        $response = $this->actingAs($owner)->get(route('reports.sales.export', ['date' => '2026-11-14', 'format' => 'excel']));
+
+        $response->assertOk();
+        $sheet = IOFactory::load($response->baseResponse->getFile()->getPathname())->getActiveSheet();
+        $periods = [];
+        $emptyMessages = 0;
+
+        for ($row = 1; $row <= $sheet->getHighestDataRow(); $row++) {
+            $label = $sheet->getCell('A'.$row)->getValue();
+            if (in_array($label, ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], true)) {
+                $periods[] = $label;
+                $this->assertSame(0.0, $sheet->getCell('B'.($row + 1))->getValue());
+            }
+
+            if ($label === 'No sales recorded for this period.') {
+                $emptyMessages++;
+            }
+        }
+
+        $this->assertSame(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], $periods);
+        $this->assertSame(4, $emptyMessages);
     }
 
     public function test_inventory_pdf_view_includes_recorded_and_unknown_collection_dates(): void

@@ -24,64 +24,71 @@
     </table>
 
     <p class="context-line">
-        <span class="label">Period</span><br>
-        {{ ucfirst($period) }} &middot; {{ $rangeLabel }}
+        <span class="label">Reference date</span><br>
+        {{ $date }} &middot; Daily, weekly, monthly, and yearly reports
     </p>
 
-    <table class="cards" cellspacing="8" cellpadding="0">
-        <tr>
-            <td width="33%">
-                <p class="card-label">Total Sales</p>
-                <p class="card-value">PHP {{ number_format($report['summary']['total_sales'], 2) }}</p>
-                <p class="card-note">for the selected period</p>
-            </td>
-            <td width="33%">
-                <p class="card-label">Transactions</p>
-                <p class="card-value">{{ $report['summary']['transaction_count'] }}</p>
-                <p class="card-note">recorded sales</p>
-            </td>
-            <td width="34%">
-                <p class="card-label">Average Sale</p>
-                <p class="card-value">PHP {{ number_format($report['summary']['average_sale'], 2) }}</p>
-                <p class="card-note">per transaction</p>
-            </td>
-        </tr>
-    </table>
+    <p class="context-line">These periods overlap; do not add their totals together.</p>
 
-    <p class="section-title">Sales Breakdown</p>
+    @foreach ($reports as $period => $report)
+        <div class="report-section" @if (! $loop->first) style="page-break-before: always;" @endif>
+            <p class="section-title">{{ ucfirst($period) }} Sales &middot; {{ $report['start']->format('M j, Y') }}@if ($period !== 'daily') &ndash; {{ $report['end']->format('M j, Y') }}@endif</p>
 
-    @if (empty($report['rows']))
-        <div class="note">No sales recorded for this period.</div>
-    @else
-        <table class="report" cellpadding="0" cellspacing="0">
-            <thead>
+            <table class="cards" cellspacing="8" cellpadding="0">
                 <tr>
-                    <th width="50%">Period</th>
-                    <th width="20%" class="num">Transactions</th>
-                    <th width="30%" class="num">Total (PHP)</th>
+                    <td width="33%">
+                        <p class="card-label">Total Sales</p>
+                        <p class="card-value">PHP {{ number_format($report['summary']['total_sales'], 2) }}</p>
+                        <p class="card-note">for this period</p>
+                    </td>
+                    <td width="33%">
+                        <p class="card-label">Transactions</p>
+                        <p class="card-value">{{ $report['summary']['transaction_count'] }}</p>
+                        <p class="card-note">recorded sales</p>
+                    </td>
+                    <td width="34%">
+                        <p class="card-label">Average Sale</p>
+                        <p class="card-value">PHP {{ number_format($report['summary']['average_sale'], 2) }}</p>
+                        <p class="card-note">per transaction</p>
+                    </td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach ($report['rows'] as $row)
-                    <tr class="{{ $loop->index % 2 === 1 ? 'alt' : '' }}">
-                        <td>{{ $row['label'] }}</td>
-                        <td class="num">{{ $row['transactions'] }}</td>
-                        <td class="num">{{ number_format($row['total'], 2) }}</td>
-                    </tr>
-                @endforeach
-                <tr class="total-row">
-                    <td>TOTAL</td>
-                    <td class="num">{{ $report['summary']['transaction_count'] }}</td>
-                    <td class="num">{{ number_format($report['summary']['total_sales'], 2) }}</td>
-                </tr>
-            </tbody>
-        </table>
-    @endif
+            </table>
+
+            <p class="section-title">Sales Breakdown</p>
+
+            @if (empty($report['rows']))
+                <div class="note">No sales recorded for this period.</div>
+            @else
+                <table class="report" cellpadding="0" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th width="50%">Time / Date</th>
+                            <th width="20%" class="num">Transactions</th>
+                            <th width="30%" class="num">Total (PHP)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($report['rows'] as $row)
+                            <tr class="{{ $loop->index % 2 === 1 ? 'alt' : '' }}">
+                                <td>{{ $row['label'] }}</td>
+                                <td class="num">{{ $row['transactions'] }}</td>
+                                <td class="num">{{ number_format($row['total'], 2) }}</td>
+                            </tr>
+                        @endforeach
+                        <tr class="total-row">
+                            <td>TOTAL</td>
+                            <td class="num">{{ $report['summary']['transaction_count'] }}</td>
+                            <td class="num">{{ number_format($report['summary']['total_sales'], 2) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            @endif
+        </div>
+    @endforeach
 
     <p class="footer">
         This report was generated automatically by Wear Me Maanyag &middot;
-        {{ now()->format('M j, Y H:i') }} &middot;
-        {{ ucfirst($period) }} period
+        {{ now()->format('M j, Y H:i') }} &middot; All four periods
     </p>
 </body>
 </html>
