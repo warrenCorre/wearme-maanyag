@@ -176,6 +176,19 @@ class AssistantQuestionPolicy
             );
         }
 
+        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments) (this month|last month)$/', $normalizedQuestion, $matches) === 1) {
+            if ($matches[1] === 'last month') {
+                $date = $date->subMonthNoOverflow();
+            }
+
+            return $this->allowed(
+                'stock_adjustments',
+                'monthly',
+                $date,
+                'Report only recorded non-sales stock adjustment counts and units by direction for '.$date->format('F Y').' without reasons or product details.',
+            );
+        }
+
         if (preg_match('/^(?:(?:show|list|give|summarize)\s+(?:me\s+)?|what\s+(?:are|is)\s+)?(?:the\s+)?(?:best(?: selling)? products?|top(?: selling)? products?|best sellers|top sellers)$/', $normalizedQuestion) === 1) {
             return $this->allowed(
                 'best_sellers',

@@ -6,7 +6,9 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\AssistantStockAdjustmentService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AssistantStockAdjustmentServiceTest extends TestCase
@@ -57,6 +59,56 @@ class AssistantStockAdjustmentServiceTest extends TestCase
         $this->assertSame(
             'Recorded non-sales stock adjustments (all time): 0 increases (0 units added), 0 decreases (0 units removed). Reasons and product details are not shown.',
             app(AssistantStockAdjustmentService::class)->answer(),
+        );
+    }
+
+    public function test_monthly_directions_use_recorded_timestamp_boundaries_across_the_year_change(): void
+    {
+        $owner = User::query()->create([
+            'name' => 'Synthetic Owner', 'email' => 'synthetic-month-stock-owner@example.test',
+            'password' => 'synthetic-password', 'phone' => '0000000000',
+            'address' => 'Synthetic address', 'role' => 'store_owner',
+            'profile_image' => '', 'status' => 'active',
+        ]);
+        $category = Category::query()->create(['category_name' => 'Synthetic category', 'status' => 'active']);
+        $product = Product::query()->create([
+            'product_code' => 'SYN-STOCK-MONTH', 'product_name' => 'Synthetic Jacket',
+            'category_id' => $category->id, 'description' => 'Synthetic item',
+            'collection_date' => '2025-11-01', 'price' => '15.00',
+            'quantity' => 10, 'low_stock_threshold' => 1, 'image' => '',
+            'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+
+        foreach ([
+            ['2025-11-30 23:59:59', 'increase', 7, 'Synthetic early restock'],
+            ['2025-12-01 00:00:00', 'increase', 2, 'Synthetic restock'],
+            ['2025-12-31 23:59:59', 'decrease', 3, 'Damaged item: Synthetic private note'],
+            ['2026-01-01 00:00:00', 'increase', 4, 'Synthetic current restock'],
+            ['2026-01-31 23:59:59', 'decrease', 1, 'Synthetic current removal'],
+            ['2026-02-01 00:00:00', 'decrease', 6, 'Synthetic later removal'],
+        ] as [$createdAt, $direction, $quantity, $reason]) {
+            DB::table('tbl_inventory_adjustments')->insert([
+                'product_id' => $product->id, 'adjusted_by' => $owner->id,
+                'direction' => $direction, 'quantity' => $quantity,
+                'quantity_before' => 10, 'quantity_after' => $direction === 'increase' ? 10 + $quantity : 10 - $quantity,
+                'reason' => $reason, 'created_at' => $createdAt,
+            ]);
+        }
+
+        $product->delete();
+        $service = app(AssistantStockAdjustmentService::class);
+
+        $this->assertSame(
+            'Recorded non-sales stock adjustments (during January 2026): 1 increase (4 units added), 1 decrease (1 unit removed). Reasons and product details are not shown.',
+            $service->answer('monthly', CarbonImmutable::parse('2026-01-01')),
+        );
+        $this->assertSame(
+            'Recorded non-sales stock adjustments (during December 2025): 1 increase (2 units added), 1 decrease (3 units removed). Reasons and product details are not shown.',
+            $service->answer('monthly', CarbonImmutable::parse('2025-12-01')),
+        );
+        $this->assertSame(
+            'Recorded non-sales stock adjustments (during October 2025): 0 increases (0 units added), 0 decreases (0 units removed). Reasons and product details are not shown.',
+            $service->answer('monthly', CarbonImmutable::parse('2025-10-15')),
         );
     }
 }

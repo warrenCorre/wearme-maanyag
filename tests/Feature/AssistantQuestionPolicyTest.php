@@ -143,6 +143,29 @@ class AssistantQuestionPolicyTest extends TestCase
         }
     }
 
+    public function test_stock_adjustment_month_questions_select_only_the_current_or_previous_calendar_month(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-01-01');
+
+        foreach ([
+            'Summarize stock adjustments this month' => '2026-01-01',
+            'Summarize non-sales stock adjustments last month' => '2025-12-01',
+            'How many stock adjustments prior month?' => '2025-12-01',
+        ] as $question => $expectedDate) {
+            $decision = $policy->evaluate($question, $date);
+
+            $this->assertSame('stock_adjustments', $decision['intent'], $question);
+            $this->assertSame('monthly', $decision['period'], $question);
+            $this->assertSame($expectedDate, $decision['date'], $question);
+            $this->assertStringNotContainsString($question, $decision['safe_question'], $question);
+        }
+
+        foreach (['Summarize stock adjustments this month and last month', 'How many stock adjustments yesterday?', 'Summarize stock adjustments last month for Synthetic Jacket', 'Show stock adjustment reasons this month'] as $question) {
+            $this->assertFalse($policy->evaluate($question, $date)['allowed'], $question);
+        }
+    }
+
     public function test_it_maps_yesterday_sales_to_the_previous_day(): void
     {
         $result = app(AssistantQuestionPolicy::class)->evaluate(

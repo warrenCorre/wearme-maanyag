@@ -166,7 +166,7 @@ class AssistantAnswerService
         if ($decision['intent'] === 'stock_adjustments') {
             return [
                 'status' => 'answered',
-                'message' => $this->stockAdjustmentService->answer(),
+                'message' => $this->stockAdjustmentService->answer($decision['period'], CarbonImmutable::parse($decision['date'])),
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded non-sales stock adjustments',
