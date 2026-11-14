@@ -455,6 +455,8 @@ class AssistantControllerTest extends TestCase
         $response->assertDontSee('chats are not saved');
         $response->assertSee('Greetings and brief chat still work with a local fallback');
         $response->assertSee('List recently collected products.');
+        $response->assertSee('How were sales last month?');
+        $response->assertSee('value="How were sales last month?"', false);
         $response->assertSee('Show the latest unpaid sale.');
         $response->assertSee('value="List recently collected products"', false);
         $response->assertSee('Check Inventory');

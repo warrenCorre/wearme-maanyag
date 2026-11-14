@@ -8,6 +8,7 @@
     @php
         $suggestedQuestions = [
             ['label' => 'Show me sales for this month.', 'question' => 'Show me sales for this month'],
+            ['label' => 'How were sales last month?', 'question' => 'How were sales last month?'],
             ['label' => 'Summarize inventory status.', 'question' => 'Summarize inventory status'],
             ['label' => 'List low-stock products.', 'question' => 'List low-stock products'],
             ['label' => 'List best-selling products.', 'question' => 'List best-selling products'],
