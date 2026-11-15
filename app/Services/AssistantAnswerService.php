@@ -236,7 +236,7 @@ class AssistantAnswerService
                 AssistantResponseValidator::RESPONSE_SCHEMA,
             );
         } catch (ConnectionException|RequestException|RuntimeException) {
-            return [
+            return $this->verifiedSalesFallback($decision, $relevantContext, $allowedSources) ?? [
                 'status' => 'unavailable',
                 'message' => 'The assistant is temporarily unavailable. Please try again.',
             ];
@@ -260,6 +260,39 @@ class AssistantAnswerService
             'answer_type' => $response['answer_type'],
             'confidence' => $response['confidence'],
             ...(! $response['refusal'] ? ['visit_context' => ['intent' => $intent]] : []),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decision
+     * @param  array<string, mixed>  $context
+     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
+     * @return array<string, mixed>|null
+     */
+    private function verifiedSalesFallback(array $decision, array $context, array $allowedSources): ?array
+    {
+        $sales = $context['sales'] ?? null;
+        $summary = is_array($sales) ? ($sales['summary'] ?? null) : null;
+
+        if (($decision['intent'] ?? null) !== 'sales_summary' || ! is_array($summary)
+            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'sales'
+            || ! in_array($decision['period'] ?? null, ['daily', 'weekly', 'monthly', 'yearly'], true)
+            || ($sales['period'] ?? null) !== $decision['period'] || ($sales['date'] ?? null) !== $decision['date']
+            || ! is_int($summary['transaction_count'] ?? null) || $summary['transaction_count'] < 0
+            || ! is_float($summary['total_sales'] ?? null) || ! is_finite($summary['total_sales'])
+            || $summary['total_sales'] < 0) {
+            return null;
+        }
+
+        $count = $summary['transaction_count'];
+
+        return [
+            'status' => 'answered',
+            'message' => 'Recorded '.$decision['period'].' sales for '.$decision['date'].': '.$count.' '.($count === 1 ? 'transaction' : 'transactions').' totaling PHP '.number_format($summary['total_sales'], 2, '.', ',').'.',
+            'sources' => $allowedSources,
+            'answer_type' => 'fact',
+            'confidence' => 'high',
+            'visit_context' => ['intent' => 'sales_summary'],
         ];
     }
 

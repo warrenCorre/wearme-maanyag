@@ -357,6 +357,22 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_sees_sourced_local_sales_if_demo_answer_generation_times_out(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this year'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded yearly sales for 2026-11-15: 0 transactions totaling PHP 0.00.')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15')
+            ->assertJsonMissingPath('result.visit_context');
+        Http::assertNothingSent();
+    }
+
     public function test_conversation_consent_never_forwards_adjustment_totals_or_individual_sale_details_to_intent_model(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);

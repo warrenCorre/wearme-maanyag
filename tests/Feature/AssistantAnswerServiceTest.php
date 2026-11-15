@@ -918,7 +918,7 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame([], $result['sources']);
     }
 
-    public function test_it_returns_unavailable_when_gemini_fails(): void
+    public function test_it_answers_verified_sales_locally_when_gemini_answer_generation_fails(): void
     {
         config(['services.gemini.allow_store_data' => true]);
 
@@ -937,8 +937,76 @@ class AssistantAnswerServiceTest extends TestCase
             CarbonImmutable::parse('2026-11-01'),
         );
 
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded monthly sales for 2026-11-01: 4 transactions totaling PHP 125.00.', $result['message']);
+        $this->assertSame([['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']], $result['sources']);
+        $this->assertSame(['intent' => 'sales_summary'], $result['visit_context']);
+        Http::assertNothingSent();
+    }
+
+    public function test_sales_fallback_declines_stale_or_unverified_summary_data(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        foreach (['wrong_date', 'wrong_period', 'invalid_total', 'missing_source'] as $failure) {
+            $context = $this->salesContext();
+
+            if ($failure === 'wrong_date') {
+                $context['sales']['date'] = '2026-10-01';
+            } elseif ($failure === 'wrong_period') {
+                $context['sales']['period'] = 'yearly';
+            } elseif ($failure === 'invalid_total') {
+                $context['sales']['summary']['total_sales'] = '125';
+            } else {
+                unset($context['as_of']['sales']);
+            }
+
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->andReturn($context);
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andThrow(new RuntimeException('Synthetic timeout.'));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-01'));
+
+            $this->assertSame('unavailable', $result['status'], $failure);
+            $this->assertArrayNotHasKey('sources', $result, $failure);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_previous_month_sales_fallback_keeps_the_requested_period_and_current_source_date(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $context = $this->salesContext();
+        $context['sales']['date'] = '2026-10-15';
+        $context['sales']['summary'] = ['transaction_count' => 1, 'total_sales' => 500.0, 'average_sale' => 500.0];
+        $context['as_of']['sales'] = '2026-11-15';
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($context);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for last month', CarbonImmutable::parse('2026-11-15'));
+
+        $this->assertSame('Recorded monthly sales for 2026-10-15: 1 transaction totaling PHP 500.00.', $result['message']);
+        $this->assertSame([['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-15']], $result['sources']);
+        Http::assertNothingSent();
+    }
+
+    public function test_inventory_answer_failure_remains_unavailable_rather_than_inventing_a_local_summary(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Summarize inventory status');
+
         $this->assertSame('unavailable', $result['status']);
-        $this->assertSame('The assistant is temporarily unavailable. Please try again.', $result['message']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
     }
 
     public function test_it_uses_current_inventory_facts_for_a_cross_skill_follow_up_without_sending_history(): void

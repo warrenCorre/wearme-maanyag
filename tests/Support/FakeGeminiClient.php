@@ -128,6 +128,10 @@ class FakeGeminiClient extends GeminiClient
             throw new RuntimeException('Only verified sales summaries can be used by the DEMO fake.');
         }
 
+        if ($sales['period'] === 'yearly' && $sales['date'] === '2026-11-15') {
+            throw new RuntimeException('Synthetic DEMO sales-answer timeout.');
+        }
+
         return json_encode([
             'answer' => 'Recorded sales for '.$sales['period'].' on '.$sales['date'].': '.$sales['summary']['transaction_count'].' transactions totaling PHP '.$sales['summary']['total_sales'].'.',
             'answer_type' => 'fact',
