@@ -149,6 +149,8 @@ class AssistantAnswerService
             ];
         }
 
+        $adjustmentSourceDate = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::today())->toDateString();
+
         if ($decision['intent'] === 'damaged_adjustments') {
             return [
                 'status' => 'answered',
@@ -156,7 +158,7 @@ class AssistantAnswerService
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded damaged-item adjustments',
-                    'as_of' => $decision['date'],
+                    'as_of' => $adjustmentSourceDate,
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',
@@ -171,7 +173,7 @@ class AssistantAnswerService
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded non-sales stock adjustments',
-                    'as_of' => $decision['date'],
+                    'as_of' => $adjustmentSourceDate,
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',

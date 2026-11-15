@@ -903,7 +903,7 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments last month?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during October 2026). Reasons and product details are not shown.')
-            ->assertJsonPath('result.sources.0.as_of', '2026-10-14');
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14');
         $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments this month and last month?'])
             ->assertJsonPath('result.status', 'declined');
 
@@ -959,7 +959,7 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'Summarize stock adjustments last month'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded non-sales stock adjustments (during October 2026): 0 increases (0 units added), 0 decreases (0 units removed). Reasons and product details are not shown.')
-            ->assertJsonPath('result.sources.0.as_of', '2026-10-14');
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14');
         $this->postJson(route('assistant.ask'), ['question' => 'Summarize stock adjustments this month and last month'])
             ->assertJsonPath('result.status', 'declined');
 
@@ -1070,7 +1070,7 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments last year?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during 2025). Reasons and product details are not shown.')
-            ->assertJsonPath('result.sources.0.as_of', '2025-11-14');
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14');
         $this->postJson(route('assistant.ask'), ['question' => 'Show stock adjustment reasons this week'])
             ->assertJsonPath('result.status', 'declined');
         Http::assertNothingSent();
@@ -1100,7 +1100,8 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded non-sales stock adjustments (during November 13, 2026): 0 increases (0 units added), 0 decreases (0 units removed). Reasons and product details are not shown.')
-            ->assertJsonPath('result.sources.0.type', 'inventory_adjustments');
+            ->assertJsonPath('result.sources.0.type', 'inventory_adjustments')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14');
         $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments yesterday?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded damaged-item adjustments: 0 decreases, 0 units removed (during November 13, 2026). Reasons and product details are not shown.');

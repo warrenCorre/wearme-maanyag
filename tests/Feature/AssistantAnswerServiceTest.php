@@ -24,6 +24,33 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_previous_adjustment_periods_keep_the_requested_range_but_date_sources_to_the_current_read(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $damagedAdjustments = Mockery::mock(AssistantDamagedAdjustmentService::class);
+        $damagedAdjustments->shouldReceive('answer')->once()
+            ->withArgs(fn (?string $period, CarbonImmutable $date): bool => $period === 'yearly' && $date->toDateString() === '2025-11-14')
+            ->andReturn('Recorded damaged-item adjustments during 2025.');
+        $stockAdjustments = Mockery::mock(AssistantStockAdjustmentService::class);
+        $stockAdjustments->shouldReceive('answer')->once()
+            ->withArgs(fn (?string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-10-14')
+            ->andReturn('Recorded stock adjustments during October 2026.');
+        $service = $this->makeAnswerService($contextService, $client, null, $damagedAdjustments, $stockAdjustments);
+        $referenceDate = CarbonImmutable::parse('2026-11-14');
+
+        $stockResult = $service->answer('Summarize stock adjustments last month', $referenceDate);
+        $damagedResult = $service->answer('How many damaged item adjustments last year?', $referenceDate);
+
+        $this->assertSame('Recorded stock adjustments during October 2026.', $stockResult['message']);
+        $this->assertSame([['type' => 'inventory_adjustments', 'label' => 'Recorded non-sales stock adjustments', 'as_of' => '2026-11-14']], $stockResult['sources']);
+        $this->assertSame('Recorded damaged-item adjustments during 2025.', $damagedResult['message']);
+        $this->assertSame([['type' => 'inventory_adjustments', 'label' => 'Recorded damaged-item adjustments', 'as_of' => '2026-11-14']], $damagedResult['sources']);
+    }
+
     public function test_general_chat_keeps_only_a_bounded_topic_and_does_not_read_store_data(): void
     {
         config(['services.gemini.allow_store_data' => true]);
@@ -830,6 +857,8 @@ class AssistantAnswerServiceTest extends TestCase
         AssistantContextService $contextService,
         GeminiClient $geminiClient,
         ?AssistantLatestUnpaidSaleService $latestSaleService = null,
+        ?AssistantDamagedAdjustmentService $damagedAdjustments = null,
+        ?AssistantStockAdjustmentService $stockAdjustments = null,
     ): AssistantAnswerService {
         return new AssistantAnswerService(
             new AssistantQuestionPolicy(new AssistantSafeTurnScreen),
@@ -839,8 +868,8 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantResponseValidator,
             new AssistantConversationService($geminiClient),
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
-            new AssistantDamagedAdjustmentService,
-            new AssistantStockAdjustmentService,
+            $damagedAdjustments ?? new AssistantDamagedAdjustmentService,
+            $stockAdjustments ?? new AssistantStockAdjustmentService,
             new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen),
