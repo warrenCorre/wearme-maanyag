@@ -163,6 +163,34 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertNull($this->service($client)->suggest('Could we talk about how our sales are doing?'));
     }
 
+    public function test_topic_implied_sales_follow_up_sends_only_a_screened_turn_and_sales_label(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Verified topic label: sales. Current screened store turn: could you show the last month too'
+                && str_contains($instruction, 'No previous turns or store data are available')
+                && in_array('sales_summary', $schema['properties']['intent']['enum'], true))
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggestSalesFollowUp('Could you show the previous month too?'));
+    }
+
+    public function test_topic_implied_follow_up_rejects_mismatched_or_unconsented_model_choices(): void
+    {
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $this->assertNull($this->service($client)->suggestSalesFollowUp('Could you show the previous month too?'));
+
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach (['{"intent":"sales_summary","period":"this month"}', '{"intent":"unpaid_summary","period":"last month"}', '{"intent":"sales_summary","period":"last month","extra":"unsafe"}', 'not json'] as $output) {
+            $mock = Mockery::mock(GeminiClient::class);
+            $mock->shouldReceive('generateText')->once()->andReturn($output);
+            $this->assertNull($this->service($mock)->suggestSalesFollowUp('Could you show the previous month too?'));
+        }
+    }
+
     private function service(GeminiClient $client): AssistantModelIntentService
     {
         return new AssistantModelIntentService($client, new AssistantStoreTurnScreen);

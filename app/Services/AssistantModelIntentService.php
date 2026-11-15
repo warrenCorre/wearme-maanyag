@@ -34,19 +34,9 @@ class AssistantModelIntentService
             return null;
         }
 
-        try {
-            $raw = $this->geminiClient->generateText(
-                'Current screened store turn: '.$screened['turn'],
-                self::SYSTEM_INSTRUCTION,
-                self::RESPONSE_SCHEMA,
-            );
-            $response = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException) {
-            return null;
-        }
+        $response = $this->classify('Current screened store turn: '.$screened['turn']);
 
-        if (! is_array($response) || count($response) !== 2
-            || ! is_string($response['intent'] ?? null) || ! is_string($response['period'] ?? null)) {
+        if ($response === null) {
             return null;
         }
 
@@ -73,5 +63,39 @@ class AssistantModelIntentService
             'collection_dates' => $intent === 'collection_dates' ? 'List recently collected products' : null,
             default => null,
         };
+    }
+
+    public function suggestSalesFollowUp(string $question): ?string
+    {
+        if (! config('services.gemini.allow_conversation', false) || ($screened = $this->turnScreen->screenSalesFollowUp($question)) === null) {
+            return null;
+        }
+
+        $response = $this->classify('Verified topic label: sales. Current screened store turn: '.$screened['turn']);
+
+        return $response !== null && $response['intent'] === 'sales_summary' && $response['period'] === $screened['period']
+            ? 'Show me sales for '.$screened['period'] : null;
+    }
+
+    /** @return array{intent: string, period: string}|null */
+    private function classify(string $prompt): ?array
+    {
+        try {
+            $raw = $this->geminiClient->generateText(
+                $prompt,
+                self::SYSTEM_INSTRUCTION,
+                self::RESPONSE_SCHEMA,
+            );
+            $response = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
+        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException) {
+            return null;
+        }
+
+        if (! is_array($response) || count($response) !== 2
+            || ! is_string($response['intent'] ?? null) || ! is_string($response['period'] ?? null)) {
+            return null;
+        }
+
+        return ['intent' => $response['intent'], 'period' => $response['period']];
     }
 }

@@ -44,6 +44,14 @@ class AssistantAnswerService
             $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
         }
 
+        if (! $decision['allowed'] && ($visitContext['intent'] ?? null) === 'sales_summary'
+            && ($visitContext['pending'] ?? null) === null
+            && ($followUp = $this->storeTurnScreen->screenSalesFollowUp($question)) !== null) {
+            $canonicalQuestion = 'Show me sales for '.$followUp['period'];
+            $modelQuestion = $this->modelIntentService->suggestSalesFollowUp($question);
+            $decision = $this->questionPolicy->evaluate($modelQuestion ?? $canonicalQuestion, $referenceDate);
+        }
+
         if ($screened !== null && (($decision['model_candidate'] ?? false)
             || ($decision['allowed'] && ! $screened['corrected'] && in_array($decision['intent'], [
                 'sales_summary', 'inventory_summary', 'low_stock', 'collection_dates', 'unpaid_summary',

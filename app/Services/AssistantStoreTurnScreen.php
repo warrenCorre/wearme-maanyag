@@ -4,6 +4,25 @@ namespace App\Services;
 
 class AssistantStoreTurnScreen
 {
+    /** @return array{turn: string, period: string}|null */
+    public function screenSalesFollowUp(string $question): ?array
+    {
+        $question = trim($question);
+
+        if ($question === '' || strlen($question) > 100 || preg_match('/\A[a-zA-Z\s?.!\x27-]+\z/D', $question) !== 1) {
+            return null;
+        }
+
+        $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
+        $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
+
+        if (preg_match('/\A(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
+            return null;
+        }
+
+        return ['turn' => $turn, 'period' => $matches[1]];
+    }
+
     private const WORDS = [
         'a', 'about', 'all', 'and', 'are', 'at', 'balance', 'balances', 'best', 'can',
         'check', 'collected', 'collection', 'collections', 'could', 'count', 'counts',

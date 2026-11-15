@@ -86,6 +86,77 @@ class AssistantAnswerServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_topic_implied_sales_follow_up_uses_checked_local_period_when_classifier_fails_or_disagrees(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+
+        foreach (['timeout', 'wrong period'] as $failure) {
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->withArgs(
+                fn (string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-10-15',
+            )->andReturn($this->salesContext());
+            $client = Mockery::mock(GeminiClient::class);
+            $classifier = $client->shouldReceive('generateText')->once()->withArgs(
+                fn (string $prompt): bool => $prompt === 'Verified topic label: sales. Current screened store turn: could you show the last month too',
+            );
+
+            if ($failure === 'timeout') {
+                $classifier->andThrow(new ConnectionException('Synthetic intent timeout'));
+            } else {
+                $classifier->andReturn('{"intent":"sales_summary","period":"this month"}');
+            }
+
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Summarize monthly sales for 2026-10-15 using only the verified context.'))
+                ->andReturn($this->structuredResponse(
+                    'Synthetic verified October sales.', 'fact', [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']],
+                ));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer(
+                'Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), ['intent' => 'sales_summary'],
+            );
+
+            $this->assertSame('answered', $result['status'], $failure);
+            $this->assertSame('Synthetic verified October sales.', $result['message'], $failure);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_topic_implied_follow_up_without_conversation_consent_stays_local_and_respects_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), ['intent' => 'sales_summary'],
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        Http::assertNothingSent();
+    }
+
+    public function test_topic_implied_sales_follow_up_does_not_consult_model_after_other_topics_or_pending_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $service = $this->makeAnswerService($contextService, $client);
+
+        foreach ([null, ['intent' => 'inventory_summary'], ['intent' => 'damaged_adjustments'], ['pending' => 'sales_period'], ['intent' => 'sales_summary', 'pending' => 'sales_goal']] as $context) {
+            $result = $service->answer('Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), $context);
+
+            $this->assertSame('declined', $result['status']);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_previous_adjustment_periods_keep_the_requested_range_but_date_sources_to_the_current_read(): void
     {
         config(['services.gemini.allow_store_data' => true]);
