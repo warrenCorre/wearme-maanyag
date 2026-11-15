@@ -373,6 +373,42 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_sees_only_aggregate_unpaid_fallback_with_demo_provider_failure(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many unpaid transactions?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded aggregate unpaid balances: 0 pending sales with PHP 0.00 outstanding.')
+            ->assertJsonPath('result.sources.0.type', 'unpaid_summary')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'How many unpaid transactions for customer Ana?'])
+            ->assertJsonPath('result.status', 'declined')
+            ->assertJsonMissingPath('result.sources');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_unpaid_aggregate_remains_disabled_without_store_sharing_even_with_a_fake_provider(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many unpaid transactions?'])
+            ->assertJsonPath('result.status', 'disabled');
+        Http::assertNothingSent();
+    }
+
     public function test_conversation_consent_never_forwards_adjustment_totals_or_individual_sale_details_to_intent_model(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);

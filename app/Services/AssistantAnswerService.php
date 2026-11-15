@@ -236,10 +236,12 @@ class AssistantAnswerService
                 AssistantResponseValidator::RESPONSE_SCHEMA,
             );
         } catch (ConnectionException|RequestException|RuntimeException) {
-            return $this->verifiedSalesFallback($decision, $relevantContext, $allowedSources) ?? [
-                'status' => 'unavailable',
-                'message' => 'The assistant is temporarily unavailable. Please try again.',
-            ];
+            return $this->verifiedSalesFallback($decision, $relevantContext, $allowedSources)
+                ?? $this->verifiedUnpaidFallback($decision, $relevantContext, $allowedSources)
+                ?? [
+                    'status' => 'unavailable',
+                    'message' => 'The assistant is temporarily unavailable. Please try again.',
+                ];
         }
 
         $validation = $this->responseValidator->validate($rawResponse, $relevantContext, $allowedSources);
@@ -293,6 +295,36 @@ class AssistantAnswerService
             'answer_type' => 'fact',
             'confidence' => 'high',
             'visit_context' => ['intent' => 'sales_summary'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decision
+     * @param  array<string, mixed>  $context
+     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
+     * @return array<string, mixed>|null
+     */
+    private function verifiedUnpaidFallback(array $decision, array $context, array $allowedSources): ?array
+    {
+        $summary = $context['unpaid_summary'] ?? null;
+
+        if (($decision['intent'] ?? null) !== 'unpaid_summary' || ! is_array($summary)
+            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'unpaid_summary'
+            || ! is_int($summary['pending_transaction_count'] ?? null) || $summary['pending_transaction_count'] < 0
+            || ! is_float($summary['outstanding_balance'] ?? null) || ! is_finite($summary['outstanding_balance'])
+            || $summary['outstanding_balance'] < 0) {
+            return null;
+        }
+
+        $count = $summary['pending_transaction_count'];
+
+        return [
+            'status' => 'answered',
+            'message' => 'Recorded aggregate unpaid balances: '.$count.' pending '.($count === 1 ? 'sale' : 'sales').' with PHP '.number_format($summary['outstanding_balance'], 2, '.', ',').' outstanding.',
+            'sources' => $allowedSources,
+            'answer_type' => 'fact',
+            'confidence' => 'high',
+            'visit_context' => ['intent' => 'unpaid_summary'],
         ];
     }
 

@@ -1009,6 +1009,53 @@ class AssistantAnswerServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_verified_aggregate_unpaid_answer_falls_back_locally_after_provider_transport_failure(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic unpaid-answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('What is the total unpaid balance?');
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded aggregate unpaid balances: 2 pending sales with PHP 90.00 outstanding.', $result['message']);
+        $this->assertSame([['type' => 'unpaid_summary', 'label' => 'Unpaid summary', 'as_of' => '2026-11-02']], $result['sources']);
+        $this->assertSame(['intent' => 'unpaid_summary'], $result['visit_context']);
+        $this->assertStringNotContainsString('Synthetic Product', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_unpaid_fallback_rejects_missing_or_unverified_aggregates(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        foreach (['missing_count', 'negative_balance', 'missing_source'] as $failure) {
+            $context = $this->salesContext();
+
+            if ($failure === 'missing_count') {
+                unset($context['unpaid_summary']['pending_transaction_count']);
+            } elseif ($failure === 'negative_balance') {
+                $context['unpaid_summary']['outstanding_balance'] = -90.0;
+            } else {
+                unset($context['as_of']['unpaid_summary']);
+            }
+
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->andReturn($context);
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andThrow(new RuntimeException('Synthetic unpaid timeout'));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer('How many unpaid transactions?');
+
+            $this->assertSame('unavailable', $result['status'], $failure);
+            $this->assertArrayNotHasKey('sources', $result, $failure);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_it_uses_current_inventory_facts_for_a_cross_skill_follow_up_without_sending_history(): void
     {
         config(['services.gemini.allow_store_data' => true]);
