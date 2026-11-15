@@ -450,6 +450,60 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('One pending balance per sale', $capturedPrompt);
     }
 
+    public function test_populated_best_sellers_consult_screened_intent_before_a_verified_ranking_answer(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn([
+            'best_sellers' => [['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30.0]],
+            'scopes' => ['best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.'],
+            'as_of' => $this->asOf(),
+        ]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->ordered()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: list best selling products')
+            ->andReturn('{"intent":"best_sellers","period":"none"}');
+        $client->shouldReceive('generateText')->once()->ordered()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Synthetic Jacket')
+                && str_contains($prompt, 'Paid sales transactions only, all-time')
+                && ! str_contains($prompt, 'Synthetic Customer'))
+            ->andReturn($this->structuredResponse(
+                'Synthetic Jacket leads with 3 paid units.', 'fact',
+                [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('List best-selling products', CarbonImmutable::parse('2026-11-01'));
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Synthetic Jacket leads with 3 paid units.', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_failed_best_seller_classification_does_not_erase_the_known_verified_ranking_route(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn([
+            'best_sellers' => [['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30.0]],
+            'as_of' => $this->asOf(),
+        ]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: list best selling products')
+            ->andThrow(new ConnectionException('Synthetic classifier timeout'));
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Synthetic Jacket'))
+            ->andReturn($this->structuredResponse(
+                'Synthetic Jacket leads with 3 paid units.', 'fact',
+                [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('List best-selling products');
+
+        $this->assertSame('answered', $result['status']);
+        Http::assertNothingSent();
+    }
+
     public function test_empty_best_seller_rankings_get_a_sourced_local_answer_without_contacting_gemini(): void
     {
         config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);
@@ -864,7 +918,7 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertSame([], $result['sources']);
     }
 
-    public function test_it_returns_unavailable_when_gemini_fails(): void
+    public function test_it_answers_verified_sales_locally_when_gemini_answer_generation_fails(): void
     {
         config(['services.gemini.allow_store_data' => true]);
 
@@ -883,8 +937,123 @@ class AssistantAnswerServiceTest extends TestCase
             CarbonImmutable::parse('2026-11-01'),
         );
 
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded monthly sales for 2026-11-01: 4 transactions totaling PHP 125.00.', $result['message']);
+        $this->assertSame([['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']], $result['sources']);
+        $this->assertSame(['intent' => 'sales_summary'], $result['visit_context']);
+        Http::assertNothingSent();
+    }
+
+    public function test_sales_fallback_declines_stale_or_unverified_summary_data(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        foreach (['wrong_date', 'wrong_period', 'invalid_total', 'missing_source'] as $failure) {
+            $context = $this->salesContext();
+
+            if ($failure === 'wrong_date') {
+                $context['sales']['date'] = '2026-10-01';
+            } elseif ($failure === 'wrong_period') {
+                $context['sales']['period'] = 'yearly';
+            } elseif ($failure === 'invalid_total') {
+                $context['sales']['summary']['total_sales'] = '125';
+            } else {
+                unset($context['as_of']['sales']);
+            }
+
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->andReturn($context);
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andThrow(new RuntimeException('Synthetic timeout.'));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-01'));
+
+            $this->assertSame('unavailable', $result['status'], $failure);
+            $this->assertArrayNotHasKey('sources', $result, $failure);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_previous_month_sales_fallback_keeps_the_requested_period_and_current_source_date(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $context = $this->salesContext();
+        $context['sales']['date'] = '2026-10-15';
+        $context['sales']['summary'] = ['transaction_count' => 1, 'total_sales' => 500.0, 'average_sale' => 500.0];
+        $context['as_of']['sales'] = '2026-11-15';
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($context);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for last month', CarbonImmutable::parse('2026-11-15'));
+
+        $this->assertSame('Recorded monthly sales for 2026-10-15: 1 transaction totaling PHP 500.00.', $result['message']);
+        $this->assertSame([['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-15']], $result['sources']);
+        Http::assertNothingSent();
+    }
+
+    public function test_inventory_answer_failure_remains_unavailable_rather_than_inventing_a_local_summary(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Summarize inventory status');
+
         $this->assertSame('unavailable', $result['status']);
-        $this->assertSame('The assistant is temporarily unavailable. Please try again.', $result['message']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
+    public function test_verified_aggregate_unpaid_answer_falls_back_locally_after_provider_transport_failure(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic unpaid-answer timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('What is the total unpaid balance?');
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded aggregate unpaid balances: 2 pending sales with PHP 90.00 outstanding.', $result['message']);
+        $this->assertSame([['type' => 'unpaid_summary', 'label' => 'Unpaid summary', 'as_of' => '2026-11-02']], $result['sources']);
+        $this->assertSame(['intent' => 'unpaid_summary'], $result['visit_context']);
+        $this->assertStringNotContainsString('Synthetic Product', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_unpaid_fallback_rejects_missing_or_unverified_aggregates(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        foreach (['missing_count', 'negative_balance', 'missing_source'] as $failure) {
+            $context = $this->salesContext();
+
+            if ($failure === 'missing_count') {
+                unset($context['unpaid_summary']['pending_transaction_count']);
+            } elseif ($failure === 'negative_balance') {
+                $context['unpaid_summary']['outstanding_balance'] = -90.0;
+            } else {
+                unset($context['as_of']['unpaid_summary']);
+            }
+
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->andReturn($context);
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andThrow(new RuntimeException('Synthetic unpaid timeout'));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer('How many unpaid transactions?');
+
+            $this->assertSame('unavailable', $result['status'], $failure);
+            $this->assertArrayNotHasKey('sources', $result, $failure);
+        }
+
+        Http::assertNothingSent();
     }
 
     public function test_it_uses_current_inventory_facts_for_a_cross_skill_follow_up_without_sending_history(): void

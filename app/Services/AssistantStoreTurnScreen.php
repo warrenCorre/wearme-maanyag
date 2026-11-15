@@ -16,7 +16,7 @@ class AssistantStoreTurnScreen
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
         $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
 
-        if (preg_match('/\A(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
+        if (preg_match('/\A(?:(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?|how (?:did we do|were we doing|are we doing) (?:in |during )?)(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
             return null;
         }
 
@@ -30,12 +30,12 @@ class AssistantStoreTurnScreen
         'i', 'in', 'inventory', 'is', 'item', 'items', 'last', 'latest', 'list', 'low', 'many',
         'looking', 'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
         'outstanding', 'owe', 'owed', 'owing', 'payment', 'payments', 'pending',
-        'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue',
+        'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue', 'running',
         'sale', 'sales', 'see', 'sell', 'sellers', 'selling', 'shop', 'show', 'sold',
         'stock', 'store', 'summarize', 'summary', 'talk', 'tell', 'the', 'there',
         'this', 'today', 'top', 'total', 'totals', 'transaction', 'transactions',
         'unpaid', 'value', 'we', 'week', 'what', 'when', 'which', 'with', 'year',
-        'were', 'yesterday', 'you', 'your',
+        'were', 'which', 'yesterday', 'you', 'your',
     ];
 
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */
@@ -69,7 +69,8 @@ class AssistantStoreTurnScreen
         $bestSellers = $this->hasAny($words, ['best', 'top', 'sellers'])
             || ($this->hasAny($words, ['sell', 'selling', 'sold']) && $this->hasAny($words, ['most']));
         $collections = $this->hasAny($words, ['collected', 'collection', 'collections']);
-        $inventory = $this->hasAny($words, ['inventory', 'stock']);
+        $inventory = $this->hasAny($words, ['inventory', 'stock'])
+            || ($this->hasAny($words, ['low']) && $this->hasAny($words, ['product', 'products', 'item', 'items']));
         $sales = $this->hasAny($words, ['sale', 'sales', 'transaction', 'transactions', 'revenue']);
 
         if (count(array_filter([$unpaid, $bestSellers, $collections, $inventory, $sales])) !== 1) {
@@ -97,7 +98,7 @@ class AssistantStoreTurnScreen
                 && $this->hasAny($words, ['all', 'list', 'latest', 'newest', 'recent', 'product', 'products', 'item', 'items']))
             || ($topic === 'inventory' && ($this->hasAny($words, ['all', 'list'])
                 || ($this->hasAny($words, ['product', 'products', 'item', 'items'])
-                    && ! $this->hasAny($words, ['many', 'quantity', 'total', 'value']))))
+                    && ! $this->hasAny($words, ['low', 'many', 'quantity', 'total', 'value']))))
             || (in_array($topic, ['best_sellers', 'collection_dates'], true) && $this->hasAny($words, ['all']))
             || (in_array($topic, ['best_sellers', 'collection_dates'], true)
                 && $this->hasAny($words, ['many', 'count', 'counts']))) {

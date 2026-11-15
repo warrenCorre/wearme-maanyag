@@ -226,8 +226,62 @@ class GeminiClientTest extends TestCase
             'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
             $schema,
         ));
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Verified topic label: sales. Current screened store turn: how did we do last month',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            $schema,
+        ));
 
         $this->expectException(\RuntimeException::class);
         $fake->generateText('Current screened store turn: sales last month for customer ana', null, $schema);
+    }
+
+    public function test_demo_fake_classifies_low_stock_and_uses_only_verified_demo_inventory(): void
+    {
+        $fake = new FakeGeminiClient;
+        $this->assertSame('{"intent":"low_stock","period":"none"}', $fake->generateText(
+            'Current screened store turn: which items are running low',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            ['properties' => ['intent' => ['enum' => ['low_stock']], 'period' => ['enum' => ['none']]]],
+        ));
+
+        $source = ['type' => 'inventory', 'label' => 'Low-stock products', 'as_of' => '2026-11-15'];
+        $prompt = "Verified system context (JSON):\n".json_encode([
+            'inventory' => ['low_stock_products' => [
+                ['product_name' => 'DEMO Cotton Tee', 'quantity' => 0, 'low_stock_threshold' => 2],
+            ]],
+            'allowed_sources' => [$source],
+        ], JSON_THROW_ON_ERROR);
+        $answer = json_decode($fake->generateText($prompt, null, ['properties' => ['answer' => ['type' => 'string']]]), true);
+
+        $this->assertSame('Recorded low-stock products: DEMO Cotton Tee (0 units).', $answer['answer']);
+        $this->assertSame([$source], $answer['sources']);
+        Http::assertNothingSent();
+    }
+
+    public function test_demo_fake_classifies_populated_best_sellers_without_forwarding_the_rankings_to_intent(): void
+    {
+        $fake = new FakeGeminiClient;
+        $this->assertSame('{"intent":"best_sellers","period":"none"}', $fake->generateText(
+            'Current screened store turn: list best selling products',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            ['properties' => ['intent' => ['enum' => ['best_sellers']], 'period' => ['enum' => ['none']]]],
+        ));
+        $source = ['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-15'];
+        $prompt = "Verified system context (JSON):\n".json_encode([
+            'best_sellers' => [['product_name' => 'DEMO Cotton Tee', 'units_sold' => 3, 'sales_total' => 30.0]],
+            'allowed_sources' => [$source],
+        ], JSON_THROW_ON_ERROR);
+        $answer = json_decode($fake->generateText($prompt, null, ['properties' => ['answer' => ['type' => 'string']]]), true);
+
+        $this->assertSame('Recorded best sellers from paid sales: DEMO Cotton Tee (3 paid units).', $answer['answer']);
+        $this->assertSame([$source], $answer['sources']);
+        $oneUnitPrompt = "Verified system context (JSON):\n".json_encode([
+            'best_sellers' => [['product_name' => 'DEMO Vintage Scarf', 'units_sold' => 1, 'sales_total' => 10.0]],
+            'allowed_sources' => [$source],
+        ], JSON_THROW_ON_ERROR);
+        $oneUnitAnswer = json_decode($fake->generateText($oneUnitPrompt, null, ['properties' => ['answer' => ['type' => 'string']]]), true);
+        $this->assertSame('Recorded best sellers from paid sales: DEMO Vintage Scarf (1 paid unit).', $oneUnitAnswer['answer']);
+        Http::assertNothingSent();
     }
 }

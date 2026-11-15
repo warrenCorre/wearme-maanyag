@@ -39,6 +39,7 @@ class AssistantAnswerService
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
         $screened = $this->storeTurnScreen->screen($question);
+        $knownBestSellerQuestion = $decision['allowed'] && $decision['intent'] === 'best_sellers';
 
         if (! $decision['allowed'] && $screened !== null && $screened['corrected']) {
             $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
@@ -211,6 +212,20 @@ class AssistantAnswerService
             ];
         }
 
+        if ($knownBestSellerQuestion && $screened !== null && ($context['best_sellers'] ?? []) !== []) {
+            $canonicalQuestion = $this->modelIntentService->suggest($question);
+
+            if ($canonicalQuestion !== null) {
+                $modelDecision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate, $visitContext);
+
+                if ($modelDecision['allowed'] && $modelDecision['intent'] === $decision['intent']
+                    && $modelDecision['period'] === $decision['period']
+                    && $modelDecision['date'] === $decision['date']) {
+                    $decision = $modelDecision;
+                }
+            }
+        }
+
         $relevantContext['allowed_sources'] = $allowedSources;
         $prompt = $this->promptBuilder->build($decision['safe_question'] ?? '', $relevantContext);
 
@@ -221,10 +236,12 @@ class AssistantAnswerService
                 AssistantResponseValidator::RESPONSE_SCHEMA,
             );
         } catch (ConnectionException|RequestException|RuntimeException) {
-            return [
-                'status' => 'unavailable',
-                'message' => 'The assistant is temporarily unavailable. Please try again.',
-            ];
+            return $this->verifiedSalesFallback($decision, $relevantContext, $allowedSources)
+                ?? $this->verifiedUnpaidFallback($decision, $relevantContext, $allowedSources)
+                ?? [
+                    'status' => 'unavailable',
+                    'message' => 'The assistant is temporarily unavailable. Please try again.',
+                ];
         }
 
         $validation = $this->responseValidator->validate($rawResponse, $relevantContext, $allowedSources);
@@ -245,6 +262,69 @@ class AssistantAnswerService
             'answer_type' => $response['answer_type'],
             'confidence' => $response['confidence'],
             ...(! $response['refusal'] ? ['visit_context' => ['intent' => $intent]] : []),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decision
+     * @param  array<string, mixed>  $context
+     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
+     * @return array<string, mixed>|null
+     */
+    private function verifiedSalesFallback(array $decision, array $context, array $allowedSources): ?array
+    {
+        $sales = $context['sales'] ?? null;
+        $summary = is_array($sales) ? ($sales['summary'] ?? null) : null;
+
+        if (($decision['intent'] ?? null) !== 'sales_summary' || ! is_array($summary)
+            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'sales'
+            || ! in_array($decision['period'] ?? null, ['daily', 'weekly', 'monthly', 'yearly'], true)
+            || ($sales['period'] ?? null) !== $decision['period'] || ($sales['date'] ?? null) !== $decision['date']
+            || ! is_int($summary['transaction_count'] ?? null) || $summary['transaction_count'] < 0
+            || ! is_float($summary['total_sales'] ?? null) || ! is_finite($summary['total_sales'])
+            || $summary['total_sales'] < 0) {
+            return null;
+        }
+
+        $count = $summary['transaction_count'];
+
+        return [
+            'status' => 'answered',
+            'message' => 'Recorded '.$decision['period'].' sales for '.$decision['date'].': '.$count.' '.($count === 1 ? 'transaction' : 'transactions').' totaling PHP '.number_format($summary['total_sales'], 2, '.', ',').'.',
+            'sources' => $allowedSources,
+            'answer_type' => 'fact',
+            'confidence' => 'high',
+            'visit_context' => ['intent' => 'sales_summary'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decision
+     * @param  array<string, mixed>  $context
+     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
+     * @return array<string, mixed>|null
+     */
+    private function verifiedUnpaidFallback(array $decision, array $context, array $allowedSources): ?array
+    {
+        $summary = $context['unpaid_summary'] ?? null;
+
+        if (($decision['intent'] ?? null) !== 'unpaid_summary' || ! is_array($summary)
+            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'unpaid_summary'
+            || ! is_int($summary['pending_transaction_count'] ?? null) || $summary['pending_transaction_count'] < 0
+            || ! is_float($summary['outstanding_balance'] ?? null) || ! is_finite($summary['outstanding_balance'])
+            || $summary['outstanding_balance'] < 0) {
+            return null;
+        }
+
+        $count = $summary['pending_transaction_count'];
+
+        return [
+            'status' => 'answered',
+            'message' => 'Recorded aggregate unpaid balances: '.$count.' pending '.($count === 1 ? 'sale' : 'sales').' with PHP '.number_format($summary['outstanding_balance'], 2, '.', ',').' outstanding.',
+            'sources' => $allowedSources,
+            'answer_type' => 'fact',
+            'confidence' => 'high',
+            'visit_context' => ['intent' => 'unpaid_summary'],
         ];
     }
 
