@@ -4,19 +4,38 @@ namespace App\Services;
 
 class AssistantStoreTurnScreen
 {
+    /** @return array{turn: string, period: string}|null */
+    public function screenSalesFollowUp(string $question): ?array
+    {
+        $question = trim($question);
+
+        if ($question === '' || strlen($question) > 100 || preg_match('/\A[a-zA-Z\s?.!\x27-]+\z/D', $question) !== 1) {
+            return null;
+        }
+
+        $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
+        $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
+
+        if (preg_match('/\A(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
+            return null;
+        }
+
+        return ['turn' => $turn, 'period' => $matches[1]];
+    }
+
     private const WORDS = [
         'a', 'about', 'all', 'and', 'are', 'at', 'balance', 'balances', 'best', 'can',
         'check', 'collected', 'collection', 'collections', 'could', 'count', 'counts',
-        'current', 'do', 'doing', 'for', 'from', 'give', 'going', 'has', 'have', 'how',
+        'current', 'did', 'do', 'doing', 'for', 'from', 'give', 'go', 'going', 'has', 'have', 'how',
         'i', 'in', 'inventory', 'is', 'item', 'items', 'last', 'latest', 'list', 'low', 'many',
-        'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
+        'looking', 'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
         'outstanding', 'owe', 'owed', 'owing', 'payment', 'payments', 'pending',
         'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue',
         'sale', 'sales', 'see', 'sell', 'sellers', 'selling', 'shop', 'show', 'sold',
         'stock', 'store', 'summarize', 'summary', 'talk', 'tell', 'the', 'there',
         'this', 'today', 'top', 'total', 'totals', 'transaction', 'transactions',
         'unpaid', 'value', 'we', 'week', 'what', 'when', 'which', 'with', 'year',
-        'yesterday', 'you', 'your',
+        'were', 'yesterday', 'you', 'your',
     ];
 
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */

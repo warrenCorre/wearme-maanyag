@@ -38,21 +38,34 @@ class AssistantAnswerService
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
+        $screened = $this->storeTurnScreen->screen($question);
 
-        if (! $decision['allowed'] && ($decision['model_candidate'] ?? false)) {
-            $screened = $this->storeTurnScreen->screen($question);
+        if (! $decision['allowed'] && $screened !== null && $screened['corrected']) {
+            $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
+        }
 
-            if ($screened !== null) {
-                if ($screened['corrected']) {
-                    $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
-                }
+        if (! $decision['allowed'] && ($visitContext['intent'] ?? null) === 'sales_summary'
+            && ($visitContext['pending'] ?? null) === null
+            && ($followUp = $this->storeTurnScreen->screenSalesFollowUp($question)) !== null) {
+            $canonicalQuestion = 'Show me sales for '.$followUp['period'];
+            $modelQuestion = $this->modelIntentService->suggestSalesFollowUp($question);
+            $decision = $this->questionPolicy->evaluate($modelQuestion ?? $canonicalQuestion, $referenceDate);
+        }
 
-                if (! $decision['allowed']) {
-                    $canonicalQuestion = $this->modelIntentService->suggest($question);
+        if ($screened !== null && (($decision['model_candidate'] ?? false)
+            || ($decision['allowed'] && ! $screened['corrected'] && in_array($decision['intent'], [
+                'sales_summary', 'inventory_summary', 'low_stock', 'collection_dates', 'unpaid_summary',
+            ], true)))) {
+            $canonicalQuestion = $this->modelIntentService->suggest($question);
 
-                    if ($canonicalQuestion !== null) {
-                        $decision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate);
-                    }
+            if ($canonicalQuestion !== null) {
+                $modelDecision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate, $visitContext);
+
+                if ($modelDecision['allowed'] && (! $decision['allowed']
+                    || ($modelDecision['intent'] === $decision['intent']
+                        && $modelDecision['period'] === $decision['period']
+                        && $modelDecision['date'] === $decision['date']))) {
+                    $decision = $modelDecision;
                 }
             }
         }
@@ -149,6 +162,8 @@ class AssistantAnswerService
             ];
         }
 
+        $adjustmentSourceDate = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::today())->toDateString();
+
         if ($decision['intent'] === 'damaged_adjustments') {
             return [
                 'status' => 'answered',
@@ -156,7 +171,7 @@ class AssistantAnswerService
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded damaged-item adjustments',
-                    'as_of' => $decision['date'],
+                    'as_of' => $adjustmentSourceDate,
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',
@@ -171,7 +186,7 @@ class AssistantAnswerService
                 'sources' => [[
                     'type' => 'inventory_adjustments',
                     'label' => 'Recorded non-sales stock adjustments',
-                    'as_of' => $decision['date'],
+                    'as_of' => $adjustmentSourceDate,
                 ]],
                 'answer_type' => 'fact',
                 'confidence' => 'high',

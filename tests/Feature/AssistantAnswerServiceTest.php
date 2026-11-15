@@ -17,6 +17,7 @@ use App\Services\AssistantStockAdjustmentService;
 use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use RuntimeException;
@@ -24,6 +25,165 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_consented_screened_existing_sales_questions_reach_model_interpretation_before_the_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Current screened store turn: show me sales for this month'
+                && str_contains($instruction, 'Never provide an answer, store fact, customer detail')
+                && in_array('sales_summary', $schema['properties']['intent']['enum'], true))
+            ->andReturn('{"intent":"sales_summary","period":"this month"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-14'));
+
+        $this->assertSame('disabled', $result['status']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_bad_model_choice_preserves_the_known_local_sales_route_and_the_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: show me sales for this month')
+            ->andReturn('{"intent":"sales_summary","period":"last year"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-14'));
+
+        $this->assertSame('disabled', $result['status']);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_model_timeout_still_answers_a_known_sales_question_from_verified_local_routing(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->withArgs(
+            fn (string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-11-01',
+        )->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: show me sales for this month')
+            ->andThrow(new ConnectionException('Synthetic intent timeout'));
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Summarize monthly sales for 2026-11-01 using only the verified context.'))
+            ->andReturn($this->structuredResponse(
+                'Monthly sales for 2026-11-01 totaled PHP 125.00 across 4 transactions.',
+                'calculation',
+                [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-01'));
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Monthly sales for 2026-11-01 totaled PHP 125.00 across 4 transactions.', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_topic_implied_sales_follow_up_uses_checked_local_period_when_classifier_fails_or_disagrees(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+
+        foreach (['timeout', 'wrong period'] as $failure) {
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->withArgs(
+                fn (string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-10-15',
+            )->andReturn($this->salesContext());
+            $client = Mockery::mock(GeminiClient::class);
+            $classifier = $client->shouldReceive('generateText')->once()->withArgs(
+                fn (string $prompt): bool => $prompt === 'Verified topic label: sales. Current screened store turn: could you show the last month too',
+            );
+
+            if ($failure === 'timeout') {
+                $classifier->andThrow(new ConnectionException('Synthetic intent timeout'));
+            } else {
+                $classifier->andReturn('{"intent":"sales_summary","period":"this month"}');
+            }
+
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Summarize monthly sales for 2026-10-15 using only the verified context.'))
+                ->andReturn($this->structuredResponse(
+                    'Synthetic verified October sales.', 'fact', [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']],
+                ));
+
+            $result = $this->makeAnswerService($contextService, $client)->answer(
+                'Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), ['intent' => 'sales_summary'],
+            );
+
+            $this->assertSame('answered', $result['status'], $failure);
+            $this->assertSame('Synthetic verified October sales.', $result['message'], $failure);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_topic_implied_follow_up_without_conversation_consent_stays_local_and_respects_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), ['intent' => 'sales_summary'],
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        Http::assertNothingSent();
+    }
+
+    public function test_topic_implied_sales_follow_up_does_not_consult_model_after_other_topics_or_pending_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $service = $this->makeAnswerService($contextService, $client);
+
+        foreach ([null, ['intent' => 'inventory_summary'], ['intent' => 'damaged_adjustments'], ['pending' => 'sales_period'], ['intent' => 'sales_summary', 'pending' => 'sales_goal']] as $context) {
+            $result = $service->answer('Could you show the previous month too?', CarbonImmutable::parse('2026-11-15'), $context);
+
+            $this->assertSame('declined', $result['status']);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_previous_adjustment_periods_keep_the_requested_range_but_date_sources_to_the_current_read(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $damagedAdjustments = Mockery::mock(AssistantDamagedAdjustmentService::class);
+        $damagedAdjustments->shouldReceive('answer')->once()
+            ->withArgs(fn (?string $period, CarbonImmutable $date): bool => $period === 'yearly' && $date->toDateString() === '2025-11-14')
+            ->andReturn('Recorded damaged-item adjustments during 2025.');
+        $stockAdjustments = Mockery::mock(AssistantStockAdjustmentService::class);
+        $stockAdjustments->shouldReceive('answer')->once()
+            ->withArgs(fn (?string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-10-14')
+            ->andReturn('Recorded stock adjustments during October 2026.');
+        $service = $this->makeAnswerService($contextService, $client, null, $damagedAdjustments, $stockAdjustments);
+        $referenceDate = CarbonImmutable::parse('2026-11-14');
+
+        $stockResult = $service->answer('Summarize stock adjustments last month', $referenceDate);
+        $damagedResult = $service->answer('How many damaged item adjustments last year?', $referenceDate);
+
+        $this->assertSame('Recorded stock adjustments during October 2026.', $stockResult['message']);
+        $this->assertSame([['type' => 'inventory_adjustments', 'label' => 'Recorded non-sales stock adjustments', 'as_of' => '2026-11-14']], $stockResult['sources']);
+        $this->assertSame('Recorded damaged-item adjustments during 2025.', $damagedResult['message']);
+        $this->assertSame([['type' => 'inventory_adjustments', 'label' => 'Recorded damaged-item adjustments', 'as_of' => '2026-11-14']], $damagedResult['sources']);
+    }
+
     public function test_general_chat_keeps_only_a_bounded_topic_and_does_not_read_store_data(): void
     {
         config(['services.gemini.allow_store_data' => true]);
@@ -830,6 +990,8 @@ class AssistantAnswerServiceTest extends TestCase
         AssistantContextService $contextService,
         GeminiClient $geminiClient,
         ?AssistantLatestUnpaidSaleService $latestSaleService = null,
+        ?AssistantDamagedAdjustmentService $damagedAdjustments = null,
+        ?AssistantStockAdjustmentService $stockAdjustments = null,
     ): AssistantAnswerService {
         return new AssistantAnswerService(
             new AssistantQuestionPolicy(new AssistantSafeTurnScreen),
@@ -839,8 +1001,8 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantResponseValidator,
             new AssistantConversationService($geminiClient),
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
-            new AssistantDamagedAdjustmentService,
-            new AssistantStockAdjustmentService,
+            $damagedAdjustments ?? new AssistantDamagedAdjustmentService,
+            $stockAdjustments ?? new AssistantStockAdjustmentService,
             new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen),

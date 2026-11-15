@@ -84,6 +84,23 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertSame('Show me sales for last month', $this->service($client)->suggest('Could we talk about how our sales are doing prior month?'));
     }
 
+    public function test_natural_sales_phrasings_use_only_a_screened_period_and_a_matching_model_choice(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            'How did our sales go last month?' => ['how did our sales go last month', 'last month'],
+            'How were our sales looking this week?' => ['how were our sales looking this week', 'this week'],
+        ] as $question => [$turn, $period]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: '.$turn)
+                ->andReturn(json_encode(['intent' => 'sales_summary', 'period' => $period], JSON_THROW_ON_ERROR));
+
+            $this->assertSame('Show me sales for '.$period, $this->service($client)->suggest($question));
+        }
+    }
+
     public function test_suggested_skills_are_limited_by_the_screened_topic_and_request_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -144,6 +161,34 @@ class AssistantModelIntentServiceTest extends TestCase
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
 
         $this->assertNull($this->service($client)->suggest('Could we talk about how our sales are doing?'));
+    }
+
+    public function test_topic_implied_sales_follow_up_sends_only_a_screened_turn_and_sales_label(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Verified topic label: sales. Current screened store turn: could you show the last month too'
+                && str_contains($instruction, 'No previous turns or store data are available')
+                && in_array('sales_summary', $schema['properties']['intent']['enum'], true))
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggestSalesFollowUp('Could you show the previous month too?'));
+    }
+
+    public function test_topic_implied_follow_up_rejects_mismatched_or_unconsented_model_choices(): void
+    {
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $this->assertNull($this->service($client)->suggestSalesFollowUp('Could you show the previous month too?'));
+
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach (['{"intent":"sales_summary","period":"this month"}', '{"intent":"unpaid_summary","period":"last month"}', '{"intent":"sales_summary","period":"last month","extra":"unsafe"}', 'not json'] as $output) {
+            $mock = Mockery::mock(GeminiClient::class);
+            $mock->shouldReceive('generateText')->once()->andReturn($output);
+            $this->assertNull($this->service($mock)->suggestSalesFollowUp('Could you show the previous month too?'));
+        }
     }
 
     private function service(GeminiClient $client): AssistantModelIntentService
