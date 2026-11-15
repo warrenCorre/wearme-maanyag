@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
+use App\Services\AssistantDamagedAdjustmentService;
 use App\Services\AssistantLatestUnpaidSaleService;
 use App\Services\AssistantModelIntentService;
 use App\Services\AssistantPromptBuilder;
@@ -12,6 +13,7 @@ use App\Services\AssistantQuestionPolicy;
 use App\Services\AssistantResponseValidator;
 use App\Services\AssistantSafeChatService;
 use App\Services\AssistantSafeTurnScreen;
+use App\Services\AssistantStockAdjustmentService;
 use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
@@ -837,6 +839,8 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantResponseValidator,
             new AssistantConversationService($geminiClient),
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
+            new AssistantDamagedAdjustmentService,
+            new AssistantStockAdjustmentService,
             new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen),

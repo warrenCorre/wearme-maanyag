@@ -88,7 +88,7 @@ class AssistantController extends Controller
                 'chat_topic' => 'thrift',
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['intent'] ?? null, [
-            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
+            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'damaged_adjustments', 'stock_adjustments',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,

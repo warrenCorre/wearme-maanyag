@@ -9,7 +9,7 @@ class AssistantIntentRouter
         'been', 'best', 'can', 'check', 'collected', 'collection', 'collections', 'could',
         'count', 'counts', 'current', 'currently', 'date', 'dates', 'did', 'do', 'doing', 'far',
         'find', 'for', 'from', 'get', 'give', 'going', 'has', 'have', 'how', 'hows', 'i', 'in',
-        'inventory', 'is', 'item', 'items', 'latest', 'lately', 'left', 'list', 'looking',
+        'inventory', 'is', 'item', 'items', 'last', 'latest', 'lately', 'left', 'list', 'looking',
         'low', 'make', 'many', 'me', 'money', 'month', 'most', 'much', 'my', 'newest', 'number',
         'of', 'on', 'one', 'or', 'our', 'out', 'outstanding', 'owe', 'owed', 'owing',
         'payment', 'payments', 'pending', 'please', 'product', 'products', 'pull', 'quantity',
@@ -18,7 +18,7 @@ class AssistantIntentRouter
         'store', 'still', 'summarize', 'summary', 'tell', 'the', 'there', 'this',
         'today', 'top', 'total', 'totals', 'transaction', 'transactions', 'unpaid',
         'units', 'up', 'us', 'value', 'was', 'we', 'week', 'what', 'whats', 'when', 'which',
-        'with', 'year', 'yesterday', 'you', 'your',
+        'were', 'with', 'year', 'yesterday', 'you', 'your',
     ];
 
     /**
@@ -55,10 +55,10 @@ class AssistantIntentRouter
         }
 
         $recent = $this->hasAny($words, ['latest', 'newest', 'recent']);
-        preg_match_all('/\b(today|yesterday|this week|this month|this year)\b/', $question, $periods);
+        preg_match_all('/\b(today|yesterday|this week|this month|this year|last week|last month|last year)\b/', $question, $periods);
 
         if (count($periods[0]) > 1
-            || ($this->hasAny($words, ['today', 'yesterday', 'week', 'month', 'year']) && $periods[0] === [])) {
+            || ($this->hasAny($words, ['today', 'yesterday', 'week', 'month', 'year', 'last']) && $periods[0] === [])) {
             return null;
         }
 

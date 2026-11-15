@@ -61,7 +61,7 @@ class AssistantQuestionPolicy
             }
         }
 
-        if ($pending === 'sales_period' && in_array($choice, ['today', 'yesterday', 'this week', 'this month', 'this year'], true)) {
+        if ($pending === 'sales_period' && in_array($choice, ['today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year'], true)) {
             return $this->evaluate('Show me sales for '.$choice, $date);
         }
 
@@ -73,6 +73,20 @@ class AssistantQuestionPolicy
             if (in_array($choice, ['one', 'a sale', 'one sale', 'particular', 'particular sale', 'a particular sale', 'latest', 'latest one', 'latest sale', 'recent sale', 'specific sale', 'sale details'], true)) {
                 return $this->localLatestUnpaidSale($date);
             }
+        }
+
+        if ($pending === null && ($visitContext['intent'] ?? null) === 'sales_summary'
+            && in_array($choice, ['today', 'yesterday', 'this week', 'last week', 'this month', 'last month', 'this year', 'last year'], true)) {
+            return $this->evaluate('Show me sales for '.$choice, $date);
+        }
+
+        if ($pending === null && in_array($visitContext['intent'] ?? null, ['damaged_adjustments', 'stock_adjustments'], true)
+            && preg_match('/^(?:(?:what|how) about |(?:and|also) )?(today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            $question = $visitContext['intent'] === 'damaged_adjustments'
+                ? 'How many damaged item adjustments '.$matches[1]
+                : 'Summarize stock adjustments '.$matches[1];
+
+            return $this->evaluate($question, $date);
         }
 
         if (($visitContext['chat_topic'] ?? null) === 'thrift'
@@ -92,17 +106,23 @@ class AssistantQuestionPolicy
             return $this->clarification($date, 'unpaid_goal');
         }
 
-        if (preg_match('/^(?:(?:show|give|summarize)\s+(?:me\s+)?|what(?:\s+(?:is|are|was|were)|s)\s+)?(?:the\s+)?(?:sales(?:\s+summary)?|total sales|sales total|revenue summary|transaction summary)\s+(?:for|in|during)\s+(today|yesterday|this week|this month|this year|daily|weekly|monthly|yearly)$/', $normalizedQuestion, $matches) === 1) {
+        if (preg_match('/^(?:(?:show|give|summarize)\s+(?:me\s+)?|what(?:\s+(?:is|are|was|were)|s)\s+)?(?:the\s+)?(?:sales(?:\s+summary)?|total sales|sales total|revenue summary|transaction summary)\s+(?:for|in|during)\s+(today|yesterday|this week|this month|this year|last week|last month|last year|daily|weekly|monthly|yearly)$/', $normalizedQuestion, $matches) === 1) {
             $periodPhrase = $matches[1];
             $period = match ($periodPhrase) {
                 'today', 'yesterday', 'daily' => 'daily',
-                'this week', 'weekly' => 'weekly',
-                'this month', 'monthly' => 'monthly',
-                'this year', 'yearly' => 'yearly',
+                'this week', 'last week', 'weekly' => 'weekly',
+                'this month', 'last month', 'monthly' => 'monthly',
+                'this year', 'last year', 'yearly' => 'yearly',
             };
 
             if ($periodPhrase === 'yesterday') {
                 $date = $date->subDay();
+            } elseif ($periodPhrase === 'last week') {
+                $date = $date->subWeek();
+            } elseif ($periodPhrase === 'last month') {
+                $date = $date->subMonthNoOverflow();
+            } elseif ($periodPhrase === 'last year') {
+                $date = $date->subYearNoOverflow();
             }
 
             return $this->allowed(
@@ -123,6 +143,78 @@ class AssistantQuestionPolicy
                 $isLowStockQuestion
                     ? 'List current low-stock products with quantities and thresholds using only the verified context.'
                     : 'Summarize current inventory quantities and value using only the verified context.',
+            );
+        }
+
+        if (in_array($normalizedQuestion, [
+            'summarize damaged item adjustments',
+            'show me damaged item adjustment totals',
+            'how many damaged item adjustments',
+        ], true)) {
+            return $this->allowed(
+                'damaged_adjustments',
+                null,
+                $date,
+                'Report only recorded damaged-item adjustment count and removed units without reasons or product details.',
+            );
+        }
+
+        if (preg_match('/^(?:summarize damaged item adjustments|how many damaged item adjustments(?: were there)?)(?: (?:for|in|during))? (today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            $date = match ($matches[1]) {
+                'yesterday' => $date->subDay(),
+                'last month' => $date->subMonthNoOverflow(),
+                'last week' => $date->subWeek(),
+                'last year' => $date->subYearNoOverflow(),
+                default => $date,
+            };
+            $period = match (true) {
+                in_array($matches[1], ['today', 'yesterday'], true) => 'daily',
+                str_ends_with($matches[1], 'week') => 'weekly',
+                str_ends_with($matches[1], 'year') => 'yearly',
+                default => 'monthly',
+            };
+
+            return $this->allowed(
+                'damaged_adjustments',
+                $period,
+                $date,
+                'Report only recorded damaged-item adjustment count and removed units for '.$period.' on '.$date->toDateString().' without reasons or product details.',
+            );
+        }
+
+        if (in_array($normalizedQuestion, [
+            'summarize stock adjustments',
+            'summarize non sales stock adjustments',
+            'how many stock adjustments',
+        ], true)) {
+            return $this->allowed(
+                'stock_adjustments',
+                null,
+                $date,
+                'Report only recorded non-sales stock adjustment counts and units by direction without reasons or product details.',
+            );
+        }
+
+        if (preg_match('/^(?:summarize (?:non sales )?stock adjustments|how many stock adjustments)(?: (?:for|in|during))? (today|yesterday|this month|last month|this week|last week|this year|last year)$/', $normalizedQuestion, $matches) === 1) {
+            $date = match ($matches[1]) {
+                'yesterday' => $date->subDay(),
+                'last month' => $date->subMonthNoOverflow(),
+                'last week' => $date->subWeek(),
+                'last year' => $date->subYearNoOverflow(),
+                default => $date,
+            };
+            $period = match (true) {
+                in_array($matches[1], ['today', 'yesterday'], true) => 'daily',
+                str_ends_with($matches[1], 'week') => 'weekly',
+                str_ends_with($matches[1], 'year') => 'yearly',
+                default => 'monthly',
+            };
+
+            return $this->allowed(
+                'stock_adjustments',
+                $period,
+                $date,
+                'Report only recorded non-sales stock adjustment counts and units by direction for '.$period.' on '.$date->toDateString().' without reasons or product details.',
             );
         }
 
@@ -162,7 +254,7 @@ class AssistantQuestionPolicy
             $followUp = preg_replace('/^(?:(?:(?:and|also|then)\s+)?(?:what|how)\s+about|(?:and|also|then))(?:\s+the)?\s+/', '', $normalizedQuestion) ?? '';
 
             if ($followUp !== $normalizedQuestion) {
-                if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year)$/', $followUp) === 1) {
+                if (preg_match('/^sales (?:for|in|during) (?:today|yesterday|this week|this month|this year|last week|last month|last year)$/', $followUp) === 1) {
                     return $this->evaluate('Show me '.$followUp, $date);
                 }
 
@@ -172,7 +264,7 @@ class AssistantQuestionPolicy
                     'best sellers', 'best selling products' => 'List best-selling products',
                     'collection dates', 'recently collected products' => 'List recently collected products',
                     'unpaid balance', 'outstanding balance' => 'What is the total unpaid balance?',
-                    'today', 'yesterday', 'this week', 'this month', 'this year' => $visitContext['intent'] === 'sales_summary'
+                    'today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year' => $visitContext['intent'] === 'sales_summary'
                         ? 'Show me sales for '.$followUp : null,
                     default => null,
                 };
@@ -207,7 +299,7 @@ class AssistantQuestionPolicy
             return $this->generalChat($date, $chatTurn);
         }
 
-        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, or aggregate unpaid question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.', true);
+        return $this->denied($date, 'The question is unsupported or ambiguous; ask a clear sales, inventory, collection-date, best-seller, aggregate unpaid, or aggregate stock-adjustment or damaged-item totals question. I can also respond to a greeting or brief light chat, but not unrelated factual questions.', true);
     }
 
     private function withoutSocialOpening(string $question): string
@@ -249,7 +341,9 @@ class AssistantQuestionPolicy
         $question = str_replace(["'", '’'], '', $question);
         $question = preg_replace('/[?.!,]+$/u', '', $question) ?? '';
 
-        return preg_replace('/\s+/u', ' ', $question) ?? '';
+        $question = preg_replace('/\s+/u', ' ', $question) ?? '';
+
+        return preg_replace('/\b(?:previous|prior) (week|month|year)\b/u', 'last $1', $question) ?? '';
     }
 
     /**

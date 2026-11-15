@@ -18,6 +18,8 @@ class AssistantAnswerService
         private AssistantResponseValidator $responseValidator,
         private AssistantConversationService $conversationService,
         private AssistantLatestUnpaidSaleService $latestUnpaidSaleService,
+        private AssistantDamagedAdjustmentService $damagedAdjustmentService,
+        private AssistantStockAdjustmentService $stockAdjustmentService,
         private AssistantSafeChatService $safeChatService,
         private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantModelIntentService $modelIntentService,
@@ -124,7 +126,7 @@ class AssistantAnswerService
                 'status' => 'clarification',
                 'message' => $this->conversationService->reply('clarification', $topic) ?? match ($topic) {
                     'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
-                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, this month, or this year?',
+                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
                     'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
                     'latest_pending_sale_confirmation' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
                 },
@@ -144,6 +146,36 @@ class AssistantAnswerService
             return [
                 'status' => 'disabled',
                 'message' => 'Assistant answers are disabled until sharing store data with Gemini is explicitly approved and enabled.',
+            ];
+        }
+
+        if ($decision['intent'] === 'damaged_adjustments') {
+            return [
+                'status' => 'answered',
+                'message' => $this->damagedAdjustmentService->answer($decision['period'], CarbonImmutable::parse($decision['date'])),
+                'sources' => [[
+                    'type' => 'inventory_adjustments',
+                    'label' => 'Recorded damaged-item adjustments',
+                    'as_of' => $decision['date'],
+                ]],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+                'visit_context' => ['intent' => 'damaged_adjustments'],
+            ];
+        }
+
+        if ($decision['intent'] === 'stock_adjustments') {
+            return [
+                'status' => 'answered',
+                'message' => $this->stockAdjustmentService->answer($decision['period'], CarbonImmutable::parse($decision['date'])),
+                'sources' => [[
+                    'type' => 'inventory_adjustments',
+                    'label' => 'Recorded non-sales stock adjustments',
+                    'as_of' => $decision['date'],
+                ]],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+                'visit_context' => ['intent' => 'stock_adjustments'],
             ];
         }
 

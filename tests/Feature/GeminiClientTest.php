@@ -190,7 +190,7 @@ class GeminiClientTest extends TestCase
             $fake->generateText('Unsupported DEMO request.', null, ['properties' => ['intent' => ['type' => 'string']]]);
             $this->fail('Expected unsupported request to be refused.');
         } catch (\RuntimeException $exception) {
-            $this->assertSame('The DEMO fake supports only sales answers and clarification styles.', $exception->getMessage());
+            $this->assertSame('The DEMO fake supports only sales answers, clarification styles, and one screened sales classifier turn.', $exception->getMessage());
         }
 
         try {
@@ -201,5 +201,23 @@ class GeminiClientTest extends TestCase
         }
 
         Http::assertNothingSent();
+    }
+
+    public function test_demo_classifier_only_accepts_the_fixed_screened_previous_month_sales_turn(): void
+    {
+        $fake = new FakeGeminiClient;
+        $schema = ['properties' => [
+            'intent' => ['enum' => ['none', 'sales_summary']],
+            'period' => ['enum' => ['none', 'last month']],
+        ]];
+
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Current screened store turn: could we talk about how our sales are doing last month',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            $schema,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $fake->generateText('Current screened store turn: sales last month for customer ana', null, $schema);
     }
 }

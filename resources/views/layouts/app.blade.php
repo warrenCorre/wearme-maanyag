@@ -94,7 +94,7 @@
                                 <span class="text-2xl">◌</span>
                                 <span class="text-sm font-black">Maanyag Assistant</span>
                             </div>
-                            <p class="mt-2 text-xs font-medium leading-relaxed text-slate-600">Ask supported, read-only questions about sales, inventory, best sellers, and aggregate unpaid balances.</p>
+                            <p class="mt-2 text-xs font-medium leading-relaxed text-slate-600">Ask supported questions about sales, inventory, aggregate unpaid balances, and read-only stock-adjustment totals.</p>
                         </a>
                     @else
                         <div class="rounded-2xl border-2 border-slate-900 bg-amber-50 p-4">

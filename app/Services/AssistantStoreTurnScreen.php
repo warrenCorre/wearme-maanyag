@@ -8,7 +8,7 @@ class AssistantStoreTurnScreen
         'a', 'about', 'all', 'and', 'are', 'at', 'balance', 'balances', 'best', 'can',
         'check', 'collected', 'collection', 'collections', 'could', 'count', 'counts',
         'current', 'do', 'doing', 'for', 'from', 'give', 'going', 'has', 'have', 'how',
-        'i', 'in', 'inventory', 'is', 'item', 'items', 'latest', 'list', 'low', 'many',
+        'i', 'in', 'inventory', 'is', 'item', 'items', 'last', 'latest', 'list', 'low', 'many',
         'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
         'outstanding', 'owe', 'owed', 'owing', 'payment', 'payments', 'pending',
         'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue',
@@ -29,6 +29,7 @@ class AssistantStoreTurnScreen
         }
 
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
+        $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
         $words = explode(' ', $turn);
         $corrected = false;
 
@@ -56,10 +57,10 @@ class AssistantStoreTurnScreen
             return null;
         }
 
-        preg_match_all('/\b(today|yesterday|this week|this month|this year)\b/', $turn, $periods);
+        preg_match_all('/\b(today|yesterday|this week|this month|this year|last week|last month|last year)\b/', $turn, $periods);
 
         if (count($periods[0]) > 1
-            || ($this->hasAny($words, ['today', 'yesterday', 'week', 'month', 'year']) && $periods[0] === [])) {
+            || ($this->hasAny($words, ['today', 'yesterday', 'week', 'month', 'year', 'last']) && $periods[0] === [])) {
             return null;
         }
 

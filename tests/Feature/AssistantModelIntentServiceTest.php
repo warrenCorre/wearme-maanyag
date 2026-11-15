@@ -54,6 +54,36 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertSame('Show me sales for this week', $this->service($client)->suggest('Could we talk about how our sales are doing this week?'));
     }
 
+    public function test_screened_previous_sales_periods_only_route_matching_model_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach (['last week', 'last month', 'last year'] as $period) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Current screened store turn: could we talk about how our sales are doing '.$period
+                    && in_array($period, $schema['properties']['period']['enum'], true))
+                ->andReturn(json_encode(['intent' => 'sales_summary', 'period' => $period], JSON_THROW_ON_ERROR));
+
+            $this->assertSame('Show me sales for '.$period, $this->service($client)->suggest('Could we talk about how our sales are doing '.$period.'?'));
+        }
+
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andReturn('{"intent":"sales_summary","period":"last year"}');
+        $this->assertNull($this->service($client)->suggest('Could we talk about how our sales are doing last month?'));
+    }
+
+    public function test_prior_month_conversational_wording_is_screened_to_the_existing_last_month_choice(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: could we talk about how our sales are doing last month')
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggest('Could we talk about how our sales are doing prior month?'));
+    }
+
     public function test_suggested_skills_are_limited_by_the_screened_topic_and_request_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -82,7 +112,7 @@ class AssistantModelIntentServiceTest extends TestCase
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldNotReceive('generateText');
 
-        foreach (['Sales for customer Ana', 'Latest unpaid sale for Ana', 'List all sales', 'Sales and inventory', 'Wahat about transactions for 09171234567'] as $question) {
+        foreach (['Sales for customer Ana', 'Latest unpaid sale for Ana', 'List all sales', 'Sales and inventory', 'Wahat about transactions for 09171234567', 'How are sales last month for customer Ana?', 'How are unpaid balances last month?'] as $question) {
             $this->assertNull($this->service($client)->suggest($question), $question);
         }
     }
