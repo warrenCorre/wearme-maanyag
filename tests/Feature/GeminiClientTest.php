@@ -235,4 +235,27 @@ class GeminiClientTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $fake->generateText('Current screened store turn: sales last month for customer ana', null, $schema);
     }
+
+    public function test_demo_fake_classifies_low_stock_and_uses_only_verified_demo_inventory(): void
+    {
+        $fake = new FakeGeminiClient;
+        $this->assertSame('{"intent":"low_stock","period":"none"}', $fake->generateText(
+            'Current screened store turn: which items are running low',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            ['properties' => ['intent' => ['enum' => ['low_stock']], 'period' => ['enum' => ['none']]]],
+        ));
+
+        $source = ['type' => 'inventory', 'label' => 'Low-stock products', 'as_of' => '2026-11-15'];
+        $prompt = "Verified system context (JSON):\n".json_encode([
+            'inventory' => ['low_stock_products' => [
+                ['product_name' => 'DEMO Cotton Tee', 'quantity' => 0, 'low_stock_threshold' => 2],
+            ]],
+            'allowed_sources' => [$source],
+        ], JSON_THROW_ON_ERROR);
+        $answer = json_decode($fake->generateText($prompt, null, ['properties' => ['answer' => ['type' => 'string']]]), true);
+
+        $this->assertSame('Recorded low-stock products: DEMO Cotton Tee (0 units).', $answer['answer']);
+        $this->assertSame([$source], $answer['sources']);
+        Http::assertNothingSent();
+    }
 }

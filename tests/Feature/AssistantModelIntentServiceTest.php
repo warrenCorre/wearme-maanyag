@@ -101,6 +101,32 @@ class AssistantModelIntentServiceTest extends TestCase
         }
     }
 
+    public function test_low_stock_items_paraphrase_is_classified_from_only_the_screened_current_turn(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: which items are running low')
+            ->andReturn('{"intent":"low_stock","period":"none"}');
+
+        $this->assertSame('List low-stock products', $this->service($client)->suggest('Which items are running low?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_low_stock_items_cannot_be_reclassified_as_broader_inventory_or_sales(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach (['{"intent":"inventory_summary","period":"none"}', '{"intent":"sales_summary","period":"this month"}'] as $output) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andReturn($output);
+
+            $this->assertNull($this->service($client)->suggest('Which items are running low?'));
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_suggested_skills_are_limited_by_the_screened_topic_and_request_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);

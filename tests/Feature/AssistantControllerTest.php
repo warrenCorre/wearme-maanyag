@@ -421,6 +421,43 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_screened_low_stock_paraphrase_uses_model_interpretation_and_verified_inventory_only(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Which items are running low?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'No recorded low-stock products.')
+            ->assertJsonPath('result.sources.0.type', 'inventory')
+            ->assertJsonPath('result.sources.0.label', 'Low-stock products')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15');
+        $this->postJson(route('assistant.ask'), ['question' => 'Which items are running low for customer Ana?'])
+            ->assertJsonPath('result.status', 'declined');
+        Http::assertNothingSent();
+    }
+
+    public function test_low_stock_paraphrase_never_reads_inventory_without_store_sharing(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: which items are running low')
+                ->andReturn('{"intent":"low_stock","period":"none"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Which items are running low?'])
+            ->assertJsonPath('result.status', 'disabled')
+            ->assertJsonMissingPath('result.sources');
+        Http::assertNothingSent();
+    }
+
     public function test_implied_sales_follow_up_needs_a_fresh_verified_topic_and_store_consent(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
