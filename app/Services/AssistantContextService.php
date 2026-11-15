@@ -61,7 +61,7 @@ class AssistantContextService
                 'outstanding_balance' => (float) $unpaidSummary->outstanding_balance,
             ],
             'as_of' => [
-                'sales' => $date->toDateString(),
+                'sales' => $asOf,
                 'inventory' => $asOf,
                 'best_sellers' => $asOf,
                 'collection_dates' => $asOf,

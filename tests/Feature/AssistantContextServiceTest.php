@@ -117,7 +117,7 @@ class AssistantContextServiceTest extends TestCase
             'unpaid_summary' => 'One pending balance per sale; excludes settled balances.',
         ], $context['scopes']);
         $this->assertSame([
-            'sales' => '2026-10-15',
+            'sales' => '2026-11-02',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
             'collection_dates' => '2026-11-02',
@@ -171,7 +171,7 @@ class AssistantContextServiceTest extends TestCase
             'outstanding_balance' => 0.0,
         ], $context['unpaid_summary']);
         $this->assertSame([
-            'sales' => '2026-10-15',
+            'sales' => '2026-11-02',
             'inventory' => '2026-11-02',
             'best_sellers' => '2026-11-02',
             'collection_dates' => '2026-11-02',

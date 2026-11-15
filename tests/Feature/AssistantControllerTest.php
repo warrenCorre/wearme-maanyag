@@ -773,7 +773,7 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'And what about yesterday?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded sales for daily on 2026-11-13: 0 transactions totaling PHP 0.')
-            ->assertJsonPath('result.sources.0.as_of', '2026-11-13')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-14')
             ->assertJsonMissingPath('result.visit_context');
 
         Http::assertNothingSent();
@@ -791,11 +791,13 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'How were sales last month?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded sales for monthly on 2025-12-01: 0 transactions totaling PHP 0.')
-            ->assertJsonPath('result.sources.0.type', 'sales');
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-01-01');
         $this->postJson(route('assistant.ask'), ['question' => 'And what about last year?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.message', 'Recorded sales for yearly on 2025-01-01: 0 transactions totaling PHP 0.')
-            ->assertJsonPath('result.sources.0.type', 'sales');
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-01-01');
         $this->postJson(route('assistant.ask'), ['question' => 'Sales last month and this week'])
             ->assertJsonPath('result.status', 'declined');
 
