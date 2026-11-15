@@ -16,7 +16,7 @@ class AssistantStoreTurnScreen
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
         $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
 
-        if (preg_match('/\A(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
+        if (preg_match('/\A(?:(?:could you show (?:me )?|can you show (?:me )?|what about |and )(?:the )?|how (?:did we do|were we doing|are we doing) (?:in |during )?)(today|yesterday|this week|this month|this year|last week|last month|last year)(?: too)?\z/D', $turn, $matches) !== 1) {
             return null;
         }
 

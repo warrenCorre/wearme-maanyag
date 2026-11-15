@@ -398,6 +398,29 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_verified_sales_topic_allows_how_did_we_do_without_ever_sending_prior_answers(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month'])
+            ->assertJsonPath('result.status', 'answered');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2026-10-15: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month for customer Ana?'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'declined');
+
+        Http::assertNothingSent();
+    }
+
     public function test_implied_sales_follow_up_needs_a_fresh_verified_topic_and_store_consent(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));

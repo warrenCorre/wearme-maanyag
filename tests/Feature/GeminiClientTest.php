@@ -226,6 +226,11 @@ class GeminiClientTest extends TestCase
             'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
             $schema,
         ));
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Verified topic label: sales. Current screened store turn: how did we do last month',
+            'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.',
+            $schema,
+        ));
 
         $this->expectException(\RuntimeException::class);
         $fake->generateText('Current screened store turn: sales last month for customer ana', null, $schema);

@@ -176,6 +176,18 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertSame('Show me sales for last month', $this->service($client)->suggestSalesFollowUp('Could you show the previous month too?'));
     }
 
+    public function test_topic_implied_how_did_we_do_sends_only_its_current_screened_turn_and_topic_label(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Verified topic label: sales. Current screened store turn: how did we do last month')
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggestSalesFollowUp('How did we do previous month?'));
+        Http::assertNothingSent();
+    }
+
     public function test_topic_implied_follow_up_rejects_mismatched_or_unconsented_model_choices(): void
     {
         $client = Mockery::mock(GeminiClient::class);

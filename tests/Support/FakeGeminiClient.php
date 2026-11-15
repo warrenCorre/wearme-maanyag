@@ -23,7 +23,8 @@ class FakeGeminiClient extends GeminiClient
         $screenedSalesPeriod = match ($prompt) {
             'Current screened store turn: could we talk about how our sales are doing last month',
             'Current screened store turn: how did our sales go last month',
-            'Verified topic label: sales. Current screened store turn: could you show the last month too' => 'last month',
+            'Verified topic label: sales. Current screened store turn: could you show the last month too',
+            'Verified topic label: sales. Current screened store turn: how did we do last month' => 'last month',
             default => null,
         };
 
