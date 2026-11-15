@@ -20,16 +20,22 @@ class FakeGeminiClient extends GeminiClient
             return '{"style":"warm","suggested_skill":"none"}';
         }
 
+        $screenedSalesPeriod = match ($prompt) {
+            'Current screened store turn: could we talk about how our sales are doing last month',
+            'Current screened store turn: how did our sales go last month' => 'last month',
+            default => null,
+        };
+
         if (isset($responseSchema['properties']['intent'])
-            && $prompt === 'Current screened store turn: could we talk about how our sales are doing last month'
+            && $screenedSalesPeriod !== null
             && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
             && in_array('sales_summary', $responseSchema['properties']['intent']['enum'] ?? [], true)
-            && in_array('last month', $responseSchema['properties']['period']['enum'] ?? [], true)) {
-            return '{"intent":"sales_summary","period":"last month"}';
+            && in_array($screenedSalesPeriod, $responseSchema['properties']['period']['enum'] ?? [], true)) {
+            return json_encode(['intent' => 'sales_summary', 'period' => $screenedSalesPeriod], JSON_THROW_ON_ERROR);
         }
 
         if (! isset($responseSchema['properties']['answer'])) {
-            throw new RuntimeException('The DEMO fake supports only sales answers, clarification styles, and one screened sales classifier turn.');
+            throw new RuntimeException('The DEMO fake supports only sales answers, clarification styles, and fixed screened sales classifier turns.');
         }
 
         $prefix = "Verified system context (JSON):\n";

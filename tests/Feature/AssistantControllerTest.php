@@ -337,6 +337,49 @@ class AssistantControllerTest extends TestCase
             ->assertJsonMissingPath('result.visit_context');
     }
 
+    public function test_owner_gets_verified_sales_for_natural_screened_wording_with_only_the_local_fake(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How did our sales go last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2026-10-15: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did our sales go last month for customer Ana?'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did our sales and inventory go last month?'])
+            ->assertJsonPath('result.status', 'declined');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_conversation_consent_never_forwards_adjustment_totals_or_individual_sale_details_to_intent_model(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory_adjustments');
+        $this->postJson(route('assistant.ask'), ['question' => 'Show the latest unpaid sale'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'How many damaged item adjustments for customer Ana?'])
+            ->assertJsonPath('result.status', 'declined');
+
+        Http::assertNothingSent();
+    }
+
     public function test_a_bounded_store_question_typo_clarifies_in_the_browser_without_a_provider_call(): void
     {
         $owner = $this->createUser('store_owner');

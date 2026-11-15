@@ -7,16 +7,16 @@ class AssistantStoreTurnScreen
     private const WORDS = [
         'a', 'about', 'all', 'and', 'are', 'at', 'balance', 'balances', 'best', 'can',
         'check', 'collected', 'collection', 'collections', 'could', 'count', 'counts',
-        'current', 'do', 'doing', 'for', 'from', 'give', 'going', 'has', 'have', 'how',
+        'current', 'did', 'do', 'doing', 'for', 'from', 'give', 'go', 'going', 'has', 'have', 'how',
         'i', 'in', 'inventory', 'is', 'item', 'items', 'last', 'latest', 'list', 'low', 'many',
-        'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
+        'looking', 'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
         'outstanding', 'owe', 'owed', 'owing', 'payment', 'payments', 'pending',
         'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue',
         'sale', 'sales', 'see', 'sell', 'sellers', 'selling', 'shop', 'show', 'sold',
         'stock', 'store', 'summarize', 'summary', 'talk', 'tell', 'the', 'there',
         'this', 'today', 'top', 'total', 'totals', 'transaction', 'transactions',
         'unpaid', 'value', 'we', 'week', 'what', 'when', 'which', 'with', 'year',
-        'yesterday', 'you', 'your',
+        'were', 'yesterday', 'you', 'your',
     ];
 
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */

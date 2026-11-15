@@ -38,21 +38,26 @@ class AssistantAnswerService
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
+        $screened = $this->storeTurnScreen->screen($question);
 
-        if (! $decision['allowed'] && ($decision['model_candidate'] ?? false)) {
-            $screened = $this->storeTurnScreen->screen($question);
+        if (! $decision['allowed'] && $screened !== null && $screened['corrected']) {
+            $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
+        }
 
-            if ($screened !== null) {
-                if ($screened['corrected']) {
-                    $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
-                }
+        if ($screened !== null && (($decision['model_candidate'] ?? false)
+            || ($decision['allowed'] && ! $screened['corrected'] && in_array($decision['intent'], [
+                'sales_summary', 'inventory_summary', 'low_stock', 'collection_dates', 'unpaid_summary',
+            ], true)))) {
+            $canonicalQuestion = $this->modelIntentService->suggest($question);
 
-                if (! $decision['allowed']) {
-                    $canonicalQuestion = $this->modelIntentService->suggest($question);
+            if ($canonicalQuestion !== null) {
+                $modelDecision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate, $visitContext);
 
-                    if ($canonicalQuestion !== null) {
-                        $decision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate);
-                    }
+                if ($modelDecision['allowed'] && (! $decision['allowed']
+                    || ($modelDecision['intent'] === $decision['intent']
+                        && $modelDecision['period'] === $decision['period']
+                        && $modelDecision['date'] === $decision['date']))) {
+                    $decision = $modelDecision;
                 }
             }
         }

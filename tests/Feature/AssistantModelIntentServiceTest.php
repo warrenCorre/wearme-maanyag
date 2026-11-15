@@ -84,6 +84,23 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertSame('Show me sales for last month', $this->service($client)->suggest('Could we talk about how our sales are doing prior month?'));
     }
 
+    public function test_natural_sales_phrasings_use_only_a_screened_period_and_a_matching_model_choice(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            'How did our sales go last month?' => ['how did our sales go last month', 'last month'],
+            'How were our sales looking this week?' => ['how were our sales looking this week', 'this week'],
+        ] as $question => [$turn, $period]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: '.$turn)
+                ->andReturn(json_encode(['intent' => 'sales_summary', 'period' => $period], JSON_THROW_ON_ERROR));
+
+            $this->assertSame('Show me sales for '.$period, $this->service($client)->suggest($question));
+        }
+    }
+
     public function test_suggested_skills_are_limited_by_the_screened_topic_and_request_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);

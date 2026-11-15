@@ -17,6 +17,7 @@ use App\Services\AssistantStockAdjustmentService;
 use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use RuntimeException;
@@ -24,6 +25,67 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_consented_screened_existing_sales_questions_reach_model_interpretation_before_the_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Current screened store turn: show me sales for this month'
+                && str_contains($instruction, 'Never provide an answer, store fact, customer detail')
+                && in_array('sales_summary', $schema['properties']['intent']['enum'], true))
+            ->andReturn('{"intent":"sales_summary","period":"this month"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-14'));
+
+        $this->assertSame('disabled', $result['status']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_bad_model_choice_preserves_the_known_local_sales_route_and_the_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: show me sales for this month')
+            ->andReturn('{"intent":"sales_summary","period":"last year"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-14'));
+
+        $this->assertSame('disabled', $result['status']);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_model_timeout_still_answers_a_known_sales_question_from_verified_local_routing(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->withArgs(
+            fn (string $period, CarbonImmutable $date): bool => $period === 'monthly' && $date->toDateString() === '2026-11-01',
+        )->andReturn($this->salesContext());
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: show me sales for this month')
+            ->andThrow(new ConnectionException('Synthetic intent timeout'));
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Summarize monthly sales for 2026-11-01 using only the verified context.'))
+            ->andReturn($this->structuredResponse(
+                'Monthly sales for 2026-11-01 totaled PHP 125.00 across 4 transactions.',
+                'calculation',
+                [['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('Show me sales for this month', CarbonImmutable::parse('2026-11-01'));
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Monthly sales for 2026-11-01 totaled PHP 125.00 across 4 transactions.', $result['message']);
+        Http::assertNothingSent();
+    }
+
     public function test_previous_adjustment_periods_keep_the_requested_range_but_date_sources_to_the_current_read(): void
     {
         config(['services.gemini.allow_store_data' => true]);
