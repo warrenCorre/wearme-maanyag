@@ -450,6 +450,60 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('One pending balance per sale', $capturedPrompt);
     }
 
+    public function test_populated_best_sellers_consult_screened_intent_before_a_verified_ranking_answer(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn([
+            'best_sellers' => [['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30.0]],
+            'scopes' => ['best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.'],
+            'as_of' => $this->asOf(),
+        ]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->ordered()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: list best selling products')
+            ->andReturn('{"intent":"best_sellers","period":"none"}');
+        $client->shouldReceive('generateText')->once()->ordered()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Synthetic Jacket')
+                && str_contains($prompt, 'Paid sales transactions only, all-time')
+                && ! str_contains($prompt, 'Synthetic Customer'))
+            ->andReturn($this->structuredResponse(
+                'Synthetic Jacket leads with 3 paid units.', 'fact',
+                [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('List best-selling products', CarbonImmutable::parse('2026-11-01'));
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Synthetic Jacket leads with 3 paid units.', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_failed_best_seller_classification_does_not_erase_the_known_verified_ranking_route(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->once()->andReturn([
+            'best_sellers' => [['product_name' => 'Synthetic Jacket', 'units_sold' => 3, 'sales_total' => 30.0]],
+            'as_of' => $this->asOf(),
+        ]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: list best selling products')
+            ->andThrow(new ConnectionException('Synthetic classifier timeout'));
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'Synthetic Jacket'))
+            ->andReturn($this->structuredResponse(
+                'Synthetic Jacket leads with 3 paid units.', 'fact',
+                [['type' => 'best_sellers', 'label' => 'Best sellers', 'as_of' => '2026-11-02']],
+            ));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer('List best-selling products');
+
+        $this->assertSame('answered', $result['status']);
+        Http::assertNothingSent();
+    }
+
     public function test_empty_best_seller_rankings_get_a_sourced_local_answer_without_contacting_gemini(): void
     {
         config(['services.gemini.allow_store_data' => true, 'services.gemini.allow_conversation' => true]);

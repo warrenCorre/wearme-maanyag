@@ -39,6 +39,7 @@ class AssistantAnswerService
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
         $screened = $this->storeTurnScreen->screen($question);
+        $knownBestSellerQuestion = $decision['allowed'] && $decision['intent'] === 'best_sellers';
 
         if (! $decision['allowed'] && $screened !== null && $screened['corrected']) {
             $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
@@ -209,6 +210,20 @@ class AssistantAnswerService
                 'confidence' => 'high',
                 'visit_context' => ['intent' => $intent],
             ];
+        }
+
+        if ($knownBestSellerQuestion && $screened !== null && ($context['best_sellers'] ?? []) !== []) {
+            $canonicalQuestion = $this->modelIntentService->suggest($question);
+
+            if ($canonicalQuestion !== null) {
+                $modelDecision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate, $visitContext);
+
+                if ($modelDecision['allowed'] && $modelDecision['intent'] === $decision['intent']
+                    && $modelDecision['period'] === $decision['period']
+                    && $modelDecision['date'] === $decision['date']) {
+                    $decision = $modelDecision;
+                }
+            }
         }
 
         $relevantContext['allowed_sources'] = $allowedSources;

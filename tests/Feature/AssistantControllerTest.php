@@ -439,6 +439,28 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_populated_best_sellers_uses_the_local_fake_classifier_and_only_verified_ranking_data(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('build')->once()->andReturn([
+                'best_sellers' => [['product_name' => 'DEMO Cotton Tee', 'units_sold' => 3, 'sales_total' => 30.0]],
+                'as_of' => ['best_sellers' => '2026-11-15'],
+                'scopes' => ['best_sellers' => 'Paid sales transactions only, all-time; not limited to the selected sales period.'],
+            ]);
+        });
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'List best-selling products'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded best sellers from paid sales: DEMO Cotton Tee (3 paid units).')
+            ->assertJsonPath('result.sources.0.type', 'best_sellers')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-15');
+        Http::assertNothingSent();
+    }
+
     public function test_low_stock_paraphrase_never_reads_inventory_without_store_sharing(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

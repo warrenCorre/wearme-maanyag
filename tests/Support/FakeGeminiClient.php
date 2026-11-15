@@ -44,6 +44,14 @@ class FakeGeminiClient extends GeminiClient
             return '{"intent":"low_stock","period":"none"}';
         }
 
+        if (isset($responseSchema['properties']['intent'])
+            && $prompt === 'Current screened store turn: list best selling products'
+            && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
+            && in_array('best_sellers', $responseSchema['properties']['intent']['enum'] ?? [], true)
+            && in_array('none', $responseSchema['properties']['period']['enum'] ?? [], true)) {
+            return '{"intent":"best_sellers","period":"none"}';
+        }
+
         if (! isset($responseSchema['properties']['answer'])) {
             throw new RuntimeException('The DEMO fake supports only sales answers, clarification styles, and fixed screened sales classifier turns.');
         }
@@ -80,6 +88,31 @@ class FakeGeminiClient extends GeminiClient
 
             return json_encode([
                 'answer' => $answer,
+                'answer_type' => 'fact',
+                'sources' => [$source],
+                'confidence' => 'high',
+                'refusal' => false,
+            ], JSON_THROW_ON_ERROR);
+        }
+
+        if (($source['type'] ?? null) === 'best_sellers' && ($source['label'] ?? null) === 'Best sellers'
+            && is_array($context['best_sellers'] ?? null) && $context['best_sellers'] !== []
+            && is_string($source['as_of'] ?? null)) {
+            $products = $context['best_sellers'];
+
+            foreach ($products as $product) {
+                if (! is_array($product) || ! is_string($product['product_name'] ?? null)
+                    || ! str_starts_with($product['product_name'], 'DEMO ')
+                    || ! is_int($product['units_sold'] ?? null) || $product['units_sold'] < 1
+                    || ! is_numeric($product['sales_total'] ?? null)) {
+                    throw new RuntimeException('The DEMO fake accepts only verified DEMO paid-sale rankings.');
+                }
+            }
+
+            return json_encode([
+                'answer' => 'Recorded best sellers from paid sales: '.implode(', ', array_map(
+                    fn (array $product): string => $product['product_name'].' ('.$product['units_sold'].' paid '.($product['units_sold'] === 1 ? 'unit' : 'units').')', $products,
+                )).'.',
                 'answer_type' => 'fact',
                 'sources' => [$source],
                 'confidence' => 'high',
