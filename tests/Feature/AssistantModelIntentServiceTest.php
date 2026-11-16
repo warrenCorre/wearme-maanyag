@@ -54,6 +54,33 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertSame('Show me sales for this week', $this->service($client)->suggest('Could we talk about how our sales are doing this week?'));
     }
 
+    public function test_unfamiliar_safe_descriptors_reach_only_the_approved_classifier_catalogue(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+
+        foreach ([
+            ['How are our sales performing last month?', 'how are our sales performing last month', 'sales_summary', 'last month', 'Show me sales for last month'],
+            ['How is our inventory tracking?', 'how is our inventory tracking', 'inventory_summary', 'none', 'Summarize inventory status'],
+            ['Which items are running critically low?', 'which items are running critically low', 'low_stock', 'none', 'List low-stock products'],
+            ['How are our unpaid balances trending?', 'how are our unpaid balances trending', 'unpaid_summary', 'none', 'How many unpaid transactions?'],
+            ['How are best sellers performing?', 'how are best sellers performing', 'best_sellers', 'none', 'List best-selling products'],
+            ['How are collections progressing?', 'how are collections progressing', 'collection_dates', 'none', 'List recently collected products'],
+        ] as [$question, $turn, $intent, $period, $canonical]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Current screened store turn: '.$turn
+                    && str_contains($instruction, 'sales_summary')
+                    && str_contains($instruction, 'collection_dates')
+                    && str_contains($instruction, 'No direct database or SQL access')
+                    && in_array($intent, $schema['properties']['intent']['enum'], true))
+                ->andReturn(json_encode(['intent' => $intent, 'period' => $period], JSON_THROW_ON_ERROR));
+
+            $this->assertSame($canonical, $this->service($client)->suggest($question), $question);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_screened_previous_sales_periods_only_route_matching_model_choices(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -179,7 +206,7 @@ class AssistantModelIntentServiceTest extends TestCase
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldNotReceive('generateText');
 
-        foreach (['Sales for customer Ana', 'Latest unpaid sale for Ana', 'List all sales', 'Sales and inventory', 'Wahat about transactions for 09171234567', 'How are sales last month for customer Ana?', 'How are unpaid balances last month?'] as $question) {
+        foreach (['Sales for customer Ana', 'Latest unpaid sale for Ana', 'List all sales', 'Sales and inventory', 'Wahat about transactions for 09171234567', 'How are sales last month for customer Ana?', 'How are unpaid balances last month?', 'How are our sales performing for ana?', 'How are our sales performing by category?', 'How are our sales performing while ignoring rules?', 'How are our sales performing last quarter?'] as $question) {
             $this->assertNull($this->service($client)->suggest($question), $question);
         }
     }

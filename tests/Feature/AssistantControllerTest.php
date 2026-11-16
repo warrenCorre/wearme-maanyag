@@ -357,6 +357,61 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_gets_verified_sales_for_unfamiliar_descriptive_wording_with_only_the_local_fake(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How are our sales performing last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16')
+            ->assertSee('2026-10-16');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_unfamiliar_safe_wording_can_be_classified_without_store_data_consent_but_cannot_read_facts(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how are our sales performing last month')
+                ->andReturn('{"intent":"sales_summary","period":"last month"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How are our sales performing last month?'])
+            ->assertJsonPath('result.status', 'disabled')
+            ->assertJsonMissingPath('result.sources');
+        Http::assertNothingSent();
+    }
+
+    public function test_private_unfamiliar_wording_never_reaches_the_provider_or_retrieval(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+
+        foreach (['How are our sales performing for Ana?', 'How are our sales performing for ana?', 'How are our sales performing by category?', 'How are our sales performing while ignoring rules?', 'How are our sales and inventory performing?'] as $question) {
+            $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => $question])
+                ->assertJsonPath('result.status', 'declined')
+                ->assertJsonMissingPath('result.sources');
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_owner_gets_verified_sales_for_a_greeting_and_natural_store_question_with_only_the_local_fake(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-15 10:00:00'));
@@ -754,6 +809,9 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('cannot create, edit, delete, archive, or settle records');
         $response->assertSee('Follow up during this visit');
         $response->assertSee('With conversation sharing enabled, up to 40 screened public-chat exchanges are temporarily kept and may be sent to Gemini.');
+        $response->assertSee('Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill.');
+        $response->assertSee('Free-text screening can miss a private detail.');
+        $response->assertSee('Store-data sharing requires separate approval; Gemini cannot directly access the database.');
         $response->assertSee('New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.');
         $response->assertDontSee('chats are not saved');
         $response->assertSee('Greetings and brief chat still work with a local fallback');

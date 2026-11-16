@@ -236,6 +236,32 @@ class GeminiClientTest extends TestCase
         $fake->generateText('Current screened store turn: sales last month for customer ana', null, $schema);
     }
 
+    public function test_demo_classifier_accepts_only_fixed_new_descriptive_turns_with_the_approved_schema(): void
+    {
+        $fake = new FakeGeminiClient;
+        $instruction = 'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.';
+        $schema = ['properties' => [
+            'intent' => ['enum' => ['none', 'sales_summary', 'low_stock']],
+            'period' => ['enum' => ['none', 'last month']],
+        ]];
+
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Current screened store turn: how are our sales performing last month', $instruction, $schema,
+        ));
+        $this->assertSame('{"intent":"low_stock","period":"none"}', $fake->generateText(
+            'Current screened store turn: which items are running critically low', $instruction, $schema,
+        ));
+
+        try {
+            $fake->generateText('Current screened store turn: how are our sales performing for ana', $instruction, $schema);
+            $this->fail('Expected the DEMO fake to reject a private turn.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('DEMO fake supports only', $exception->getMessage());
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_demo_fake_classifies_low_stock_and_uses_only_verified_demo_inventory(): void
     {
         $fake = new FakeGeminiClient;

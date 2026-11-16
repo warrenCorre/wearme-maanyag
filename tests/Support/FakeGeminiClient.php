@@ -23,6 +23,7 @@ class FakeGeminiClient extends GeminiClient
         $screenedSalesPeriod = match ($prompt) {
             'Current screened store turn: could we talk about how our sales are doing last month',
             'Current screened store turn: how did our sales go last month',
+            'Current screened store turn: how are our sales performing last month',
             'Verified topic label: sales. Current screened store turn: could you show the last month too',
             'Verified topic label: sales. Current screened store turn: how did we do last month' => 'last month',
             default => null,
@@ -38,6 +39,14 @@ class FakeGeminiClient extends GeminiClient
 
         if (isset($responseSchema['properties']['intent'])
             && $prompt === 'Current screened store turn: which items are running low'
+            && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
+            && in_array('low_stock', $responseSchema['properties']['intent']['enum'] ?? [], true)
+            && in_array('none', $responseSchema['properties']['period']['enum'] ?? [], true)) {
+            return '{"intent":"low_stock","period":"none"}';
+        }
+
+        if (isset($responseSchema['properties']['intent'])
+            && $prompt === 'Current screened store turn: which items are running critically low'
             && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
             && in_array('low_stock', $responseSchema['properties']['intent']['enum'] ?? [], true)
             && in_array('none', $responseSchema['properties']['period']['enum'] ?? [], true)) {
