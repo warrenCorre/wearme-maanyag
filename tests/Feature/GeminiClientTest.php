@@ -304,6 +304,44 @@ class GeminiClientTest extends TestCase
         $fake->generateText($prompt, null, ['properties' => ['answer' => ['type' => 'string']]]);
     }
 
+    public function test_demo_natural_classifier_uses_only_fixed_fictional_cases_and_the_complete_schema(): void
+    {
+        $client = new FakeGeminiClient;
+        $schema = [
+            'properties' => [
+                'intent' => ['enum' => ['sales_summary', 'store_goal', 'low_stock']],
+                'period' => ['enum' => ['none', 'last month', 'last week', 'yesterday']],
+                'scope' => ['enum' => ['overall']],
+            ],
+            'required' => ['intent', 'period', 'scope'],
+        ];
+        $instruction = 'Interpret English and Cebuano by meaning.';
+
+        $this->assertSame('{"intent":"sales_summary","period":"yesterday","scope":"overall"}', $client->generateText(
+            'Current screened store turn: pila atong halin gahapon', $instruction, $schema,
+        ));
+        $this->assertSame('{"intent":"store_goal","period":"last month","scope":"overall"}', $client->generateText(
+            'Current screened store turn: give me the big picture on how the shop did last month', $instruction, $schema,
+        ));
+        $this->assertSame('{"intent":"sales_summary","period":"last month","scope":"overall"}', $client->generateText(
+            'Validated pending period: last month. Current screened store turn: sales totals', $instruction, $schema,
+        ));
+
+        foreach ([
+            ['Current screened store turn: what flew off the rack for ana', $schema],
+            ['Current screened store turn: pila atong halin gahapon', ['properties' => ['scope' => []]]],
+        ] as [$prompt, $invalidSchema]) {
+            try {
+                $client->generateText($prompt, $instruction, $invalidSchema);
+                $this->fail('The strict DEMO classifier must reject unexpected prompts or schemas.');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('DEMO natural classifier', $exception->getMessage());
+            }
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_demo_fake_classifies_low_stock_and_uses_only_verified_demo_inventory(): void
     {
         $fake = new FakeGeminiClient;

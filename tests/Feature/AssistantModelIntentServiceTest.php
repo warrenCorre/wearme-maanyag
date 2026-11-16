@@ -12,6 +12,91 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_model_can_select_a_skill_without_a_locally_selected_topic(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            ['How much did the register ring up yesterday?', 'sales_summary', 'yesterday', 'Show me sales for yesterday'],
+            ['Are we close to running out of anything?', 'low_stock', 'none', 'List low-stock products'],
+            ['What flew off the rack?', 'best_sellers', 'none', 'List best-selling products'],
+            ['Pila atong halin last week?', 'sales_summary', 'last week', 'Show me sales for last week'],
+            ['Pila atong halin gahapon?', 'sales_summary', 'yesterday', 'Show me sales for yesterday'],
+        ] as [$question, $intent, $period, $expected]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => str_contains($prompt, strtolower(rtrim($question, '?')))
+                    && ! str_contains($prompt, 'Verified topic label:')
+                    && isset($schema['properties']['scope'])
+                    && str_contains($instruction, 'Cebuano')
+                    && str_contains($instruction, 'Return exactly intent, period, scope')
+                    && ! str_contains($instruction, 'Return only JSON with intent and period'))
+                ->andReturn(json_encode(['intent' => $intent, 'period' => $period, 'scope' => 'overall'], JSON_THROW_ON_ERROR));
+
+            $this->assertSame(['question' => $expected, 'period' => null], $this->service($client)->interpret($question));
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_natural_suggestions_cannot_drop_filters_periods_or_add_fields(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            '{"intent":"sales_summary","period":"last week","scope":"overall"}',
+            '{"intent":"sales_summary","period":"none","scope":"overall"}',
+            '{"intent":"sales_summary","period":"yesterday","scope":"filtered"}',
+            '{"intent":"sales_summary","period":"yesterday","scope":"mixed"}',
+            '{"intent":"sales_summary","period":"yesterday","scope":"private"}',
+            '{"intent":"sales_summary","period":"yesterday"}',
+            '{"intent":"sales_summary","period":"yesterday","scope":"overall","sql":"select"}',
+            '{"intent":"delete_sales","period":"yesterday","scope":"overall"}',
+            '{"intent":"low_stock","period":"none","scope":"overall"}',
+            '{"intent":"store_goal","period":"none","scope":"overall"}',
+            'not json',
+        ] as $response) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andReturn($response);
+
+            $this->assertNull($this->service($client)->interpret('How much did the register ring up yesterday?'), $response);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_clarification_retains_only_a_validated_period_and_uses_it_for_a_screened_follow_up(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->andReturn('{"intent":"store_goal","period":"last month","scope":"overall"}');
+
+        $this->assertSame(['question' => null, 'period' => 'last month'], $this->service($client)->interpret('Give me the big picture on how the shop did last month.'));
+
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Validated pending period: last month. Current screened store turn: sales totals'
+                && ! str_contains($prompt, 'shop'))
+            ->andReturn('{"intent":"sales_summary","period":"last month","scope":"overall"}');
+
+        $this->assertSame(['question' => 'Show me sales for last month', 'period' => null], $this->service($client)->interpret('Sales totals', 'last month'));
+        Http::assertNothingSent();
+    }
+
+    public function test_natural_privacy_refusals_and_disabled_conversation_never_call_a_provider(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $this->assertNull($this->service($client)->interpret('What flew off the rack for ana?'));
+        $this->assertNull($this->service($client)->interpret('What is running low in the jacket category?'));
+
+        config(['services.gemini.allow_conversation' => false]);
+        $this->assertNull($this->service($client)->interpret('What flew off the rack?'));
+        Http::assertNothingSent();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

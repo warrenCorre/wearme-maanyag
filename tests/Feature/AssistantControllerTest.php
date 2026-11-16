@@ -21,6 +21,96 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_natural_store_wording_clarifies_and_preserves_the_period_until_the_owner_selects_sales(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Give me the big picture on how the shop did last month.'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonPath('result.message', 'For last month, would you like sales totals or transaction counts?')
+            ->assertJsonMissingPath('result.sources')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales totals'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2026-10-16: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16');
+        $this->postJson(route('assistant.ask'), ['question' => 'Pila atong halin last week?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('weekly on 2026-11-09')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'Are we close to running out of anything?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'No recorded low-stock products.')
+            ->assertJsonPath('result.sources.0.label', 'Low-stock products');
+        Http::assertNothingSent();
+    }
+
+    public function test_natural_interpretation_without_store_sharing_never_reads_records(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Pila atong halin last week?'])
+            ->assertJsonPath('result.status', 'disabled')
+            ->assertJsonMissingPath('result.sources');
+        Http::assertNothingSent();
+    }
+
+    public function test_natural_pending_period_is_cleared_by_new_chat_expiry_and_private_requests(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+        $this->actingAs($owner);
+
+        foreach (['new_chat', 'expiry', 'private'] as $reset) {
+            $this->postJson(route('assistant.ask'), ['question' => 'Give me the big picture on how the shop did last month.'])
+                ->assertJsonPath('result.status', 'clarification');
+
+            if ($reset === 'new_chat') {
+                $this->get(route('assistant.index'));
+            } elseif ($reset === 'expiry') {
+                $this->travel(21)->minutes();
+            } else {
+                $this->postJson(route('assistant.ask'), ['question' => 'How much did the register ring up yesterday for alicia?'])
+                    ->assertJsonPath('result.status', 'declined');
+            }
+
+            $this->postJson(route('assistant.ask'), ['question' => 'Sales totals'])
+                ->assertJsonPath('result.status', 'clarification')
+                ->assertSee('which period:')
+                ->assertJsonMissingPath('result.sources');
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_natural_model_scope_refusal_never_reads_store_data(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->andReturn('{"intent":"sales_summary","period":"yesterday","scope":"filtered"}');
+        });
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How much did the register ring up yesterday?'])
+            ->assertJsonPath('result.status', 'declined')
+            ->assertJsonMissingPath('result.sources');
+        Http::assertNothingSent();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

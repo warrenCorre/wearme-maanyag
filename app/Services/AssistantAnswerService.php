@@ -32,7 +32,7 @@ class AssistantAnswerService
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
-     *     visit_context?: array{intent?: string, pending?: string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>}
+     *     visit_context?: array{intent?: string, pending?: string, period?: ?string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>}
      * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
@@ -68,6 +68,34 @@ class AssistantAnswerService
                         && $modelDecision['date'] === $decision['date']))) {
                     $decision = $modelDecision;
                 }
+            }
+        }
+
+        $pendingStoreGoal = ($visitContext['pending'] ?? null) === 'store_goal';
+        $pendingPeriod = $pendingStoreGoal && is_string($visitContext['period'] ?? null)
+            ? ($this->storeTurnScreen->screenSalesFollowUp('what about '.$visitContext['period'])['period'] ?? null)
+            : null;
+
+        if ((($decision['model_candidate'] ?? false) && $screened === null)
+            || ($pendingStoreGoal && $decision['intent'] === 'clarification')) {
+            $natural = $this->modelIntentService->interpret($question, $pendingPeriod);
+
+            if ($natural !== null && $natural['question'] === null) {
+                $period = $natural['period'];
+
+                return [
+                    'status' => 'clarification',
+                    'message' => $period !== null
+                        ? 'For '.$period.', would you like sales totals or transaction counts?'
+                        : 'Which store information would you like: sales, inventory, low stock, best sellers, collections, or aggregate unpaid balances?',
+                    'visit_context' => ['pending' => 'store_goal', 'period' => $period],
+                ];
+            }
+
+            if ($natural !== null) {
+                $decision = $this->questionPolicy->evaluate($natural['question'], $referenceDate);
+            } elseif ($pendingPeriod !== null && ($decision['clarification'] ?? null) === 'sales_period') {
+                $decision = $this->questionPolicy->evaluate('Show me sales for '.$pendingPeriod, $referenceDate);
             }
         }
 

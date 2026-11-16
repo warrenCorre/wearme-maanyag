@@ -20,6 +20,36 @@ class FakeGeminiClient extends GeminiClient
             return '{"style":"warm","suggested_skill":"none"}';
         }
 
+        if (isset($responseSchema['properties']['scope'])) {
+            if (! str_contains($systemInstruction ?? '', 'Interpret English and Cebuano by meaning')
+                || ($responseSchema['required'] ?? []) !== ['intent', 'period', 'scope']) {
+                throw new RuntimeException('The DEMO natural classifier requires the complete approved schema.');
+            }
+
+            $result = match ($prompt) {
+                'Current screened store turn: give me the big picture on how the shop did last month' => ['store_goal', 'last month'],
+                'Current screened store turn: how much did the register ring up yesterday' => ['sales_summary', 'yesterday'],
+                'Current screened store turn: pila atong halin last week' => ['sales_summary', 'last week'],
+                'Current screened store turn: pila atong halin gahapon' => ['sales_summary', 'yesterday'],
+                'Current screened store turn: are we close to running out of anything' => ['low_stock', 'none'],
+                'Current screened store turn: what flew off the rack' => ['best_sellers', 'none'],
+                'Validated pending period: last month. Current screened store turn: sales totals' => ['sales_summary', 'last month'],
+                default => null,
+            };
+
+            if ($result === null) {
+                throw new RuntimeException('The DEMO natural classifier accepts only fixed screened fictional examples.');
+            }
+
+            if (! in_array($result[0], $responseSchema['properties']['intent']['enum'] ?? [], true)
+                || ! in_array($result[1], $responseSchema['properties']['period']['enum'] ?? [], true)
+                || ! in_array('overall', $responseSchema['properties']['scope']['enum'] ?? [], true)) {
+                throw new RuntimeException('The DEMO natural classifier requires the matching skill, period and scope.');
+            }
+
+            return json_encode(['intent' => $result[0], 'period' => $result[1], 'scope' => 'overall'], JSON_THROW_ON_ERROR);
+        }
+
         $screenedSalesPeriod = match ($prompt) {
             'Current screened store turn: could we talk about how our sales are doing last month',
             'Current screened store turn: how did our sales go last month',

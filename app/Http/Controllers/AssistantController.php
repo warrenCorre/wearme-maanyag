@@ -76,11 +76,13 @@ class AssistantController extends Controller
                 'intent' => $result['visit_context']['intent'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'clarification' && in_array($result['visit_context']['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation',
+            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation', 'store_goal',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'pending' => $result['visit_context']['pending'],
+                ...($result['visit_context']['pending'] === 'store_goal'
+                    ? ['period' => $result['visit_context']['period'] ?? null] : []),
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'general_chat' && ($result['visit_context']['chat_topic'] ?? null) === 'thrift') {
             $request->session()->cache()->put('assistant.visit_context', [
@@ -95,11 +97,13 @@ class AssistantController extends Controller
                 'intent' => $trustedVisitContext['intent'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal',
+            'sales_goal', 'sales_period', 'unpaid_goal', 'store_goal',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'pending' => $trustedVisitContext['pending'],
+                ...($trustedVisitContext['pending'] === 'store_goal'
+                    ? ['period' => $trustedVisitContext['period'] ?? null] : []),
             ], now()->addMinutes(20));
         }
 

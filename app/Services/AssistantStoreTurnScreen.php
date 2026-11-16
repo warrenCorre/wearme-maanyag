@@ -44,6 +44,77 @@ class AssistantStoreTurnScreen
 
     private const SALES_PERIOD_PATTERN = 'today|yesterday|(?:this|last) (?:week|month|year)';
 
+    private const NATURAL_PERIODS = [
+        'today' => 'today|karon',
+        'yesterday' => 'yesterday|gahapon|kagahapon',
+        'this week' => 'this week|karong semana',
+        'last week' => 'last week|(?:niaging|miaging) semana',
+        'this month' => 'this month|karong bulan',
+        'last month' => 'last month|(?:niaging|miaging) bulan',
+        'this year' => 'this year|karong tuig',
+        'last year' => 'last year|(?:niaging|miaging) tuig',
+    ];
+
+    private const NATURAL_UNSAFE_TERMS = '/\b(?:'
+        .'add|create|record|update|edit|change|delete|remove|archive|settle|pay|mark|execute|reveal|print|download|export|'
+        .'sql|database|credentials|adjustments?|damaged?|latest|newest|recent|individual|specific|'
+        .'weather|politics|medical|recipe|next|ago|before|since|between|tomorrow|'
+        .'monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
+        .'and|or|also|plus|by|from|with|under|over|at|per|ni|kang|para|ug|og|apil|'
+        .'ngalan|pangalan|numero|telepono|adres|kostumer|kustomer|usba|ilisan|bayari|ibayad|tangtanga|dugangi|idugang|iupdate|sunod'
+        .')\b/';
+
+    /** @return array{turn: string, period: ?string}|null */
+    public function screenNaturalIntent(string $question): ?array
+    {
+        $question = trim($question);
+
+        if ($question === '' || strlen($question) > 220
+            || preg_match('/\A[\p{L} ?.!,\x27-]+\z/uD', $question) !== 1) {
+            return null;
+        }
+
+        $question = preg_replace('/\A(?:hi|hello|hey|good (?:morning|afternoon|evening))(?:,? (?:there|maanyag))?(?:[,!]\s*|\s+)(?=\S)/i', '', $question) ?? $question;
+
+        if (preg_match('/[?.!]\s+\S|,\s*(?:what|how|which|pila|unsa)\b/i', $question) === 1
+            || preg_match('/\b(?:[A-Z][a-z]+|[A-Z]{2,})\b|[a-z][A-Z]/', substr($question, strpos($question, ' ') ?: strlen($question))) === 1) {
+            return null;
+        }
+
+        $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/u', ' ', mb_strtolower($question)) ?? '') ?? '');
+        $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
+
+        if ((substr_count($turn, ' ') < 2 && $this->screen($question) === null)
+            || ($this->screenSalesFollowUp($question) !== null && ! str_starts_with($turn, 'how '))
+            || preg_match('/\b(?:list|show) (?:all|every)\b|\b(?:jokes?|chat|funny|fashion)\b/', $turn) === 1) {
+            return null;
+        }
+
+        if (substr_count($turn, ' ') >= 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
+            || preg_match(self::NATURAL_UNSAFE_TERMS, $turn) === 1
+            || preg_match('/\b(?:for|in|during)\s+(?!(?:'.implode('|', self::NATURAL_PERIODS).'|stock|total)\b)/', $turn) === 1
+            || preg_match('/\bof\s+(?!(?:anything|stock|inventory|sales|(?:our|the) (?:inventory|stock|sales))\b)/', $turn) === 1
+            || preg_match('/\b(?:sales|inventory|transactions|balances|sellers)\s+(?!(?:are|is|did|do|go|for|in|on|the|our)\b)[a-z]{1,3}\b/', $turn) === 1
+            || preg_match('/\b(?:a|an) (?!(?:brief|quick|overall|current|general|short)\b)[a-z]+ (?:overview|summary|snapshot)\b/', $turn) === 1
+            || preg_match('/\b(?:what did|how was|how were|historical)\b.*\b(?:inventory|stock)\b/', $turn) === 1) {
+            return null;
+        }
+
+        $periods = [];
+
+        foreach (self::NATURAL_PERIODS as $period => $pattern) {
+            preg_match_all('/\b(?:'.$pattern.')\b/u', $turn, $matches);
+            array_push($periods, ...array_fill(0, count($matches[0]), $period));
+        }
+
+        if (count($periods) > 1
+            || (preg_match('/\b(?:today|yesterday|week|month|year|last|this|semana|bulan|tuig)\b/', $turn) === 1 && $periods === [])) {
+            return null;
+        }
+
+        return ['turn' => $turn, 'period' => $periods[0] ?? null];
+    }
+
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */
     public function screen(string $question): ?array
     {

@@ -1155,6 +1155,46 @@ class AssistantAnswerServiceTest extends TestCase
         ], JSON_THROW_ON_ERROR);
     }
 
+    public function test_natural_business_clarification_never_reads_store_context_or_forwards_history(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: give me the big picture on how the shop did last month')
+            ->andReturn('{"intent":"store_goal","period":"last month","scope":"overall"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Give me the big picture on how the shop did last month.',
+            CarbonImmutable::parse('2026-11-16'),
+            ['store_topic' => 'inventory', 'chat_history' => [['turn' => 'fictional prior text', 'reply' => 'fictional old answer']]],
+        );
+
+        $this->assertSame([
+            'status' => 'clarification',
+            'message' => 'For last month, would you like sales totals or transaction counts?',
+            'visit_context' => ['pending' => 'store_goal', 'period' => 'last month'],
+        ], $result);
+        Http::assertNothingSent();
+    }
+
+    public function test_unavailable_natural_interpretation_retains_a_known_sales_choice_and_the_store_consent_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new RuntimeException('Fictional timeout'));
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Sales totals', CarbonImmutable::parse('2026-11-16'), ['pending' => 'store_goal', 'period' => 'last month'],
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        Http::assertNothingSent();
+    }
+
     private function makeAnswerService(
         AssistantContextService $contextService,
         GeminiClient $geminiClient,
