@@ -13,6 +13,24 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_broad_store_update_can_request_clarification_without_routing_to_a_fact_or_inventing_a_period(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->twice()->withArgs(
+            fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: how is it going at our shop right now'
+                && str_contains($instruction, 'overall store_goal clarification'),
+        )->andReturn(
+            '{"intent":"store_goal","period":"none","scope":"overall"}',
+            '{"intent":"sales_summary","period":"today","scope":"overall"}',
+        );
+        $service = $this->service($client);
+
+        $this->assertSame(['question' => null, 'period' => null], $service->interpret("How's it going at our shop right now?"));
+        $this->assertNull($service->interpret("How's it going at our shop right now?"));
+        Http::assertNothingSent();
+    }
+
     public function test_interpretation_timeout_is_distinguished_from_an_unsupported_turn(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -244,6 +262,8 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertNull($this->service($client)->interpret('What is running low in the jacket category?'));
         $this->assertNull($this->service($client)->interpret('How much money came in from ana yesterday?'));
         $this->assertNull($this->service($client)->interpret('How did sales and inventory do?'));
+        $this->assertNull($this->service($client)->interpret('How are things at the shop for ana right now?'));
+        $this->assertNull($this->service($client)->interpret('What happened at the store in cebu right now?'));
 
         config(['services.gemini.allow_conversation' => false]);
         $this->assertNull($this->service($client)->interpret('What flew off the rack?'));

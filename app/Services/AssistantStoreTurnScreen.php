@@ -44,6 +44,8 @@ class AssistantStoreTurnScreen
 
     private const SALES_PERIOD_PATTERN = 'today|yesterday|(?:this|last) (?:week|month|year)';
 
+    private const CURRENT_TIME_PATTERN = 'for now|right now|at the moment|now';
+
     private const NATURAL_PERIODS = [
         'today' => 'today|karon',
         'yesterday' => 'yesterday|gahapon|kagahapon',
@@ -67,7 +69,7 @@ class AssistantStoreTurnScreen
     /** @return array{turn: string, period: ?string}|null */
     public function screenNaturalIntent(string $question, bool $allowPublicChat = false): ?array
     {
-        $question = trim($question);
+        $question = str_replace('’', "'", trim($question));
 
         if ($question === '' || strlen($question) > 220
             || preg_match('/\A[\p{L} ?.!,\x27-]+\z/uD', $question) !== 1) {
@@ -75,6 +77,7 @@ class AssistantStoreTurnScreen
         }
 
         $question = preg_replace('/\A(?:hi|hello|hey|good (?:morning|afternoon|evening))(?:,? (?:there|maanyag))?(?:[,!]\s*|\s+)(?=\S)/i', '', $question) ?? $question;
+        $question = preg_replace('/\A(what|how)\x27s(?= )/i', '$1 is', $question) ?? $question;
         $capitalizationCheck = preg_replace_callback(
             '/\b[a-zA-Z]+\b/',
             fn (array $match): string => in_array(strtolower($match[0]), self::WORDS, true) ? strtolower($match[0]) : $match[0],
@@ -96,9 +99,18 @@ class AssistantStoreTurnScreen
             return null;
         }
 
+        $periodPattern = implode('|', self::NATURAL_PERIODS);
+        $genericStore = '\b(?:in|at|around) (?:the|our|this) (?:store|shop)';
+        $timeSuffix = '(?:'.self::CURRENT_TIME_PATTERN.'|(?:(?:for|in|during) )?(?:'.$periodPattern.'))';
+        $scopeCheck = preg_replace(
+            '/'.$genericStore.'(?= '.$timeSuffix.'\z|\z)|\b(?:'.self::CURRENT_TIME_PATTERN.')\z/',
+            '',
+            $turn,
+        ) ?? $turn;
+
         if (substr_count($turn, ' ') >= 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
-            || preg_match(self::NATURAL_UNSAFE_TERMS, $turn) === 1
-            || preg_match('/\b(?:for|in|during)\s+(?!(?:'.implode('|', self::NATURAL_PERIODS).'|stock|total|from (?:(?:our|the) )?(?:sales|store|shop))\b)/', $turn) === 1
+            || preg_match(self::NATURAL_UNSAFE_TERMS, $scopeCheck) === 1
+            || preg_match('/\b(?:for|in|during)\s+(?!(?:'.$periodPattern.'|stock|total|from (?:(?:our|the) )?(?:sales|store|shop))\b)/', $scopeCheck) === 1
             || preg_match('/\bfrom\s+(?!(?:(?:our|the) )?(?:sales|store|shop)\b)/', $turn) === 1
             || preg_match('/\bof\s+(?!(?:anything|stock|inventory|sales|how|what|whether|(?:our|the) (?:inventory|stock|sales))\b)/', $turn) === 1
             || preg_match('/\b(?:sales|inventory|stock|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
@@ -118,7 +130,7 @@ class AssistantStoreTurnScreen
         }
 
         if (count($periods) > 1
-            || (preg_match('/\b(?:today|yesterday|week|month|year|last|this|semana|bulan|tuig)\b/', $turn) === 1 && $periods === [])) {
+            || (preg_match('/\b(?:today|yesterday|week|month|year|last|this|semana|bulan|tuig)\b/', $scopeCheck) === 1 && $periods === [])) {
             return null;
         }
 

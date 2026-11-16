@@ -22,6 +22,24 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_owner_can_move_from_chat_to_a_broad_store_question_then_select_a_verified_skill(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => "What's going on in the Store for now?"])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertSee('Which store information would you like')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'Can I see stock and its value?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.label', 'Inventory summary');
+        Http::assertNothingSent();
+    }
+
     public function test_short_reactions_follow_the_previous_public_reply_and_reset_with_new_chat(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

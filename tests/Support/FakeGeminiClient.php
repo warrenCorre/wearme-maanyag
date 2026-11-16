@@ -51,6 +51,7 @@ class FakeGeminiClient extends GeminiClient
             }
 
             $result = match ($prompt) {
+                'Current screened store turn: what is going on in the store for now' => ['store_goal', 'none'],
                 'Current screened store turn: uhmm nothing really',
                 'Current screened store turn: haha just hanging around',
                 'Current screened store turn: pwede ta magchika kadyot',
