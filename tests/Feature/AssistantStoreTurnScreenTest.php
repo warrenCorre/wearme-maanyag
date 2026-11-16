@@ -20,6 +20,9 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Pila atong halin gahapon?' => ['pila atong halin gahapon', 'yesterday'],
             'Pila atong halin niaging bulan?' => ['pila atong halin niaging bulan', 'last month'],
             'Give me the big picture on how the shop did last month.' => ['give me the big picture on how the shop did last month', 'last month'],
+            'Can I see stock and its value?' => ['can i see stock and its value', null],
+            'How much money came in from sales yesterday?' => ['how much money came in from sales yesterday', 'yesterday'],
+            'Can you give me an idea of how sales are doing?' => ['can you give me an idea of how sales are doing', null],
         ] as $question => [$turn, $period]) {
             $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question), $question);
         }
@@ -59,6 +62,11 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Ana',
             'Aggregate',
             'Yes',
+            'How much money came in from ana yesterday?',
+            'How much money came in from jackets yesterday?',
+            'How did sales and inventory do?',
+            'Show me sales of jackets yesterday.',
+            'Can you give me an idea of alicia sales yesterday?',
         ] as $question) {
             $this->assertNull($screen->screenNaturalIntent($question), $question);
         }

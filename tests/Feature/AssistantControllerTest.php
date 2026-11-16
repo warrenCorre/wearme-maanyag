@@ -21,6 +21,26 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_ordinary_connecting_words_reach_interpretation_and_verified_skills(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Can I see stock and its value?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.label', 'Inventory summary');
+        $this->postJson(route('assistant.ask'), ['question' => 'How much money came in from sales yesterday?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.label', 'Sales summary')
+            ->assertSee('daily on 2026-11-15');
+        $this->postJson(route('assistant.ask'), ['question' => 'Can you give me an idea of how sales are doing?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources');
+        Http::assertNothingSent();
+    }
+
     public function test_natural_store_wording_clarifies_and_preserves_the_period_until_the_owner_selects_sales(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));

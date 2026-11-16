@@ -22,6 +22,9 @@ class AssistantModelIntentServiceTest extends TestCase
             ['What flew off the rack?', 'best_sellers', 'none', 'List best-selling products'],
             ['Pila atong halin last week?', 'sales_summary', 'last week', 'Show me sales for last week'],
             ['Pila atong halin gahapon?', 'sales_summary', 'yesterday', 'Show me sales for yesterday'],
+            ['Can I see stock and its value?', 'inventory_summary', 'none', 'Summarize inventory status'],
+            ['How much money came in from sales yesterday?', 'sales_summary', 'yesterday', 'Show me sales for yesterday'],
+            ['Can you give me an idea of how sales are doing?', 'sales_goal', 'none', 'Sales?'],
         ] as [$question, $intent, $period, $expected]) {
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->once()
@@ -91,6 +94,8 @@ class AssistantModelIntentServiceTest extends TestCase
         $client->shouldNotReceive('generateText');
         $this->assertNull($this->service($client)->interpret('What flew off the rack for ana?'));
         $this->assertNull($this->service($client)->interpret('What is running low in the jacket category?'));
+        $this->assertNull($this->service($client)->interpret('How much money came in from ana yesterday?'));
+        $this->assertNull($this->service($client)->interpret('How did sales and inventory do?'));
 
         config(['services.gemini.allow_conversation' => false]);
         $this->assertNull($this->service($client)->interpret('What flew off the rack?'));

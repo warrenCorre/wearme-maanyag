@@ -60,7 +60,7 @@ class AssistantStoreTurnScreen
         .'sql|database|credentials|adjustments?|damaged?|latest|newest|recent|individual|specific|'
         .'weather|politics|medical|recipe|next|ago|before|since|between|tomorrow|'
         .'monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
-        .'and|or|also|plus|by|from|with|under|over|at|per|ni|kang|para|ug|og|apil|'
+        .'or|also|plus|by|with|under|over|at|per|ni|kang|para|ug|og|apil|'
         .'ngalan|pangalan|numero|telepono|adres|kostumer|kustomer|usba|ilisan|bayari|ibayad|tangtanga|dugangi|idugang|iupdate|sunod'
         .')\b/';
 
@@ -92,8 +92,12 @@ class AssistantStoreTurnScreen
 
         if (substr_count($turn, ' ') >= 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
             || preg_match(self::NATURAL_UNSAFE_TERMS, $turn) === 1
-            || preg_match('/\b(?:for|in|during)\s+(?!(?:'.implode('|', self::NATURAL_PERIODS).'|stock|total)\b)/', $turn) === 1
-            || preg_match('/\bof\s+(?!(?:anything|stock|inventory|sales|(?:our|the) (?:inventory|stock|sales))\b)/', $turn) === 1
+            || preg_match('/\b(?:for|in|during)\s+(?!(?:'.implode('|', self::NATURAL_PERIODS).'|stock|total|from (?:(?:our|the) )?(?:sales|store|shop))\b)/', $turn) === 1
+            || preg_match('/\bfrom\s+(?!(?:(?:our|the) )?(?:sales|store|shop)\b)/', $turn) === 1
+            || preg_match('/\bof\s+(?!(?:anything|stock|inventory|sales|how|what|whether|(?:our|the) (?:inventory|stock|sales))\b)/', $turn) === 1
+            || preg_match('/\b(?:sales|inventory|stock|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
+            || preg_match('/\band (?:what|how|which|pila|unsa)\b/', $turn) === 1
+            || preg_match('/\b(?:sales|revenue|halin)\b.*\b(?:inventory|stock)\b|\b(?:inventory|stock)\b.*\b(?:sales|revenue|halin)\b/', $turn) === 1
             || preg_match('/\b(?:sales|inventory|transactions|balances|sellers)\s+(?!(?:are|is|did|do|go|for|in|on|the|our)\b)[a-z]{1,3}\b/', $turn) === 1
             || preg_match('/\b(?:a|an) (?!(?:brief|quick|overall|current|general|short)\b)[a-z]+ (?:overview|summary|snapshot)\b/', $turn) === 1
             || preg_match('/\b(?:what did|how was|how were|historical)\b.*\b(?:inventory|stock)\b/', $turn) === 1) {
