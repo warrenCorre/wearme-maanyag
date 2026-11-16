@@ -21,6 +21,21 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_capitalized_unpaid_wording_uses_the_existing_verified_aggregate_skill(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'How many are Unpaid yet?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'unpaid_summary')
+            ->assertSee('0 pending sales')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16');
+        Http::assertNothingSent();
+    }
+
     public function test_ordinary_connecting_words_reach_interpretation_and_verified_skills(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));

@@ -7,6 +7,18 @@ use Tests\TestCase;
 
 class AssistantStoreTurnScreenTest extends TestCase
 {
+    public function test_capitalization_of_known_store_terms_does_not_resemble_an_unknown_name(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        $this->assertSame($screen->screenNaturalIntent('How many are unpaid yet?'), $screen->screenNaturalIntent('How many are Unpaid yet?'));
+        $this->assertSame($screen->screenNaturalIntent('How is our inventory doing?'), $screen->screenNaturalIntent('How is our INVENTORY doing?'));
+        $this->assertSame($screen->screenNaturalIntent('How much money came in from sales yesterday?'), $screen->screenNaturalIntent('How much money came in from Sales yesterday?'));
+        $this->assertNull($screen->screenNaturalIntent('How did our sales Ana last month?'));
+        $this->assertNull($screen->screenNaturalIntent('How did our sales ABCD last month?'));
+        $this->assertNull($screen->screenNaturalIntent('How did our sales demoBuyer last month?'));
+    }
+
     public function test_natural_intent_screen_preserves_wording_without_selecting_a_skill(): void
     {
         $screen = new AssistantStoreTurnScreen;

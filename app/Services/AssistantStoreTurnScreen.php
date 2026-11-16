@@ -75,9 +75,14 @@ class AssistantStoreTurnScreen
         }
 
         $question = preg_replace('/\A(?:hi|hello|hey|good (?:morning|afternoon|evening))(?:,? (?:there|maanyag))?(?:[,!]\s*|\s+)(?=\S)/i', '', $question) ?? $question;
+        $capitalizationCheck = preg_replace_callback(
+            '/\b[a-zA-Z]+\b/',
+            fn (array $match): string => in_array(strtolower($match[0]), self::WORDS, true) ? strtolower($match[0]) : $match[0],
+            $question,
+        ) ?? $question;
 
         if (preg_match('/[?.!]\s+\S|,\s*(?:what|how|which|pila|unsa)\b/i', $question) === 1
-            || preg_match('/\b(?:[A-Z][a-z]+|[A-Z]{2,})\b|[a-z][A-Z]/', substr($question, strpos($question, ' ') ?: strlen($question))) === 1) {
+            || preg_match('/\b(?:[A-Z][a-z]+|[A-Z]{2,})\b|[a-z][A-Z]/', substr($capitalizationCheck, strpos($capitalizationCheck, ' ') ?: strlen($capitalizationCheck))) === 1) {
             return null;
         }
 

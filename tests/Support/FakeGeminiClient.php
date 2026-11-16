@@ -36,6 +36,7 @@ class FakeGeminiClient extends GeminiClient
                 'Current screened store turn: can i see stock and its value' => ['inventory_summary', 'none'],
                 'Current screened store turn: how much money came in from sales yesterday' => ['sales_summary', 'yesterday'],
                 'Current screened store turn: can you give me an idea of how sales are doing' => ['sales_goal', 'none'],
+                'Current screened store turn: how many are unpaid yet' => ['unpaid_summary', 'none'],
                 'Validated pending period: last month. Current screened store turn: sales totals' => ['sales_summary', 'last month'],
                 default => null,
             };
