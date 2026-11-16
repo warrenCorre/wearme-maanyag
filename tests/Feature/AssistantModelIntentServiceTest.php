@@ -13,6 +13,36 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_whole_store_wording_with_our_shop_can_request_a_metric_without_store_data(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how are things with our shop')
+            ->andReturn('{"intent":"store_goal","period":"none","scope":"overall"}');
+
+        $this->assertSame(['question' => null, 'period' => null], $this->service($client)->interpret('How are things with our shop?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_broad_store_update_can_request_clarification_without_routing_to_a_fact_or_inventing_a_period(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->twice()->withArgs(
+            fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: how is it going at our shop right now'
+                && str_contains($instruction, 'overall store_goal clarification'),
+        )->andReturn(
+            '{"intent":"store_goal","period":"none","scope":"overall"}',
+            '{"intent":"sales_summary","period":"today","scope":"overall"}',
+        );
+        $service = $this->service($client);
+
+        $this->assertSame(['question' => null, 'period' => null], $service->interpret("How's it going at our shop right now?"));
+        $this->assertNull($service->interpret("How's it going at our shop right now?"));
+        Http::assertNothingSent();
+    }
+
     public function test_interpretation_timeout_is_distinguished_from_an_unsupported_turn(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -20,6 +50,20 @@ class AssistantModelIntentServiceTest extends TestCase
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
 
         $this->assertSame(['question' => null, 'period' => null, 'unavailable' => true], $this->service($client)->interpret('Uhmm, nothing really'));
+        Http::assertNothingSent();
+    }
+
+    public function test_bounded_interpretation_distinguishes_failed_calls_from_valid_unsupported_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
+        $client->shouldReceive('generateText')->once()->andReturn('{"intent":"none","period":"none"}');
+        $service = $this->service($client);
+        $question = 'Could we talk about how our sales are doing?';
+
+        $this->assertSame(['question' => null, 'unavailable' => true], $service->suggestWithStatus($question));
+        $this->assertSame(['question' => null], $service->suggestWithStatus($question));
         Http::assertNothingSent();
     }
 
@@ -230,6 +274,8 @@ class AssistantModelIntentServiceTest extends TestCase
         $this->assertNull($this->service($client)->interpret('What is running low in the jacket category?'));
         $this->assertNull($this->service($client)->interpret('How much money came in from ana yesterday?'));
         $this->assertNull($this->service($client)->interpret('How did sales and inventory do?'));
+        $this->assertNull($this->service($client)->interpret('How are things at the shop for ana right now?'));
+        $this->assertNull($this->service($client)->interpret('What happened at the store in cebu right now?'));
 
         config(['services.gemini.allow_conversation' => false]);
         $this->assertNull($this->service($client)->interpret('What flew off the rack?'));

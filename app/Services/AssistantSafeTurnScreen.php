@@ -25,7 +25,16 @@ class AssistantSafeTurnScreen
 
     private const ACKNOWLEDGEMENTS = ['ok', 'okay', 'alright', 'got it'];
 
-    public function screenForModel(string $question, AssistantStoreTurnScreen $storeTurnScreen): ?string
+    public function screenBriefFollowUp(string $question, AssistantStoreTurnScreen $storeTurnScreen): ?string
+    {
+        if (preg_match('/\A(?:not|too|so|very|quite|really|pretty|dili) +[a-z]{4,32}[.!?]*\z/iD', trim($question)) !== 1) {
+            return null;
+        }
+
+        return $this->screenForModel($question, $storeTurnScreen, allowBriefFollowUp: true);
+    }
+
+    public function screenForModel(string $question, AssistantStoreTurnScreen $storeTurnScreen, bool $allowBriefFollowUp = false): ?string
     {
         if (($knownTurn = $this->screen($question)) !== null) {
             return $knownTurn;
@@ -39,7 +48,7 @@ class AssistantSafeTurnScreen
             return $turn;
         }
 
-        $screened = $storeTurnScreen->screenNaturalIntent($question, allowPublicChat: true);
+        $screened = $storeTurnScreen->screenNaturalIntent($question, allowPublicChat: true, allowBriefPublicChat: $allowBriefFollowUp);
 
         if ($screened === null
             || $storeTurnScreen->screenSalesFollowUp($question) !== null

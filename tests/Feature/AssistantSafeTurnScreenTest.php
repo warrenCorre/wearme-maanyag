@@ -8,6 +8,21 @@ use Tests\TestCase;
 
 class AssistantSafeTurnScreenTest extends TestCase
 {
+    public function test_brief_public_replies_need_valid_chat_context_but_no_echoed_word(): void
+    {
+        $screen = new AssistantSafeTurnScreen;
+        $storeScreen = new AssistantStoreTurnScreen;
+
+        $this->assertNull($screen->screenForModel('Not wonderful', $storeScreen));
+        $this->assertSame('not wonderful', $screen->screenBriefFollowUp('Not wonderful', $storeScreen));
+        $this->assertSame('too quiet', $screen->screenBriefFollowUp('Too quiet', $storeScreen));
+        $this->assertSame('not fantastic', $screen->screenBriefFollowUp('Not fantastic', $storeScreen));
+
+        foreach (['Not ana', 'Not Ana', 'Not Alicia', 'Too Barbara', 'Too Davao', 'Not unpaid', 'Not secret', 'Too 1234'] as $question) {
+            $this->assertNull($screen->screenBriefFollowUp($question, $storeScreen), $question);
+        }
+    }
+
     public function test_model_chat_admission_does_not_require_the_local_vocabulary_or_a_fixed_topic(): void
     {
         $screen = new AssistantSafeTurnScreen;
