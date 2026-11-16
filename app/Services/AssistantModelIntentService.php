@@ -46,16 +46,18 @@ class AssistantModelIntentService
         Approved read-only choices: sales_summary for overall recorded sales totals and transaction counts in one supported period; inventory_summary for current overall quantity and value; low_stock for current products below their thresholds; best_sellers for the all-time paid-sales ranking; collection_dates for recently collected active products; unpaid_summary for aggregate pending counts and outstanding balance. Never classify individual sales, customers, adjustments, writes or extra filters as an approved overall request.
         Choose sales_goal for broad sales without a goal, sales_period for sales totals without a period, unpaid_goal for unclear unpaid scope, or store_goal when the business metric is unclear. Choose none for unsupported or uncertain interpretation. A store_goal clarification must retain an explicit validated period. A pending period applies when a follow-up selects its requested metric. Preserve a new explicit period. sales_summary requires exactly one supported period. Other factual skills require period none and cannot answer a historical request.
         Scope must describe the complete request. Use filtered for extra restrictions, mixed for several requests, private for identifying content, unsupported for unsupported scope, and overall for a single approved request or a safe clarification. Never drop a restriction or period to make a request overall.
+        A validated pending goal describes the previous clarification, not store facts. sales_goal asks whether sales means totals, transaction counts, best sellers or unpaid; a reply choosing totals or counts without a period needs sales_period. sales_period asks which supported period to use for sales totals and counts; a reply choosing an explicit supported period needs sales_summary. unpaid_goal asks whether unpaid means an aggregate or one sale; a reply choosing the overall balance or count needs unpaid_summary. Interpret the reply by meaning in English or Cebuano. A self-contained new request may change the topic. Do not invent a missing period or infer private sale details from a pending goal; individual sale requests remain unsupported here.
         INSTRUCTION;
 
     public function __construct(private GeminiClient $geminiClient, private AssistantStoreTurnScreen $turnScreen) {}
 
     /** @return array{question: ?string, period: ?string}|null */
-    public function interpret(string $question, ?string $pendingPeriod = null): ?array
+    public function interpret(string $question, ?string $pendingPeriod = null, ?string $pendingGoal = null): ?array
     {
         if (! config('services.gemini.allow_conversation', false)
             || ($screened = $this->turnScreen->screenNaturalIntent($question)) === null
-            || ($pendingPeriod !== null && ! in_array($pendingPeriod, self::RESPONSE_SCHEMA['properties']['period']['enum'], true))) {
+            || ($pendingPeriod !== null && ! in_array($pendingPeriod, self::RESPONSE_SCHEMA['properties']['period']['enum'], true))
+            || ($pendingGoal !== null && ! in_array($pendingGoal, ['sales_goal', 'sales_period', 'unpaid_goal'], true))) {
             return null;
         }
 
@@ -63,6 +65,10 @@ class AssistantModelIntentService
 
         if ($pendingPeriod !== null && $pendingPeriod !== 'none') {
             $prompt = 'Validated pending period: '.$pendingPeriod.'. '.$prompt;
+        }
+
+        if ($pendingGoal !== null) {
+            $prompt = 'Validated pending goal: '.$pendingGoal.'. '.$prompt;
         }
 
         try {

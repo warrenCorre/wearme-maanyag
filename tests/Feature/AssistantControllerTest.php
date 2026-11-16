@@ -21,6 +21,67 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_varied_replies_complete_sales_and_unpaid_clarifications(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Just the totals please'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertSee('For which period')
+            ->assertJsonMissingPath('result.sources')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday would be great'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('daily on 2026-11-15')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Unpaid?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Pila tanan nga wala nabayran'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('0 pending sales')
+            ->assertJsonPath('result.sources.0.type', 'unpaid_summary')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16');
+        Http::assertNothingSent();
+    }
+
+    public function test_varied_reply_cannot_reuse_an_unpaid_clarification_after_visit_resets(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+        $this->actingAs($owner);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+
+        foreach (['new_chat', 'expiry', 'private'] as $reset) {
+            $this->postJson(route('assistant.ask'), ['question' => 'Unpaid?'])
+                ->assertJsonPath('result.status', 'clarification');
+
+            if ($reset === 'new_chat') {
+                $this->get(route('assistant.index'));
+            } elseif ($reset === 'expiry') {
+                $this->travel(21)->minutes();
+            } else {
+                $this->postJson(route('assistant.ask'), ['question' => 'The whole balance for Ana please'])
+                    ->assertJsonPath('result.status', 'declined');
+            }
+
+            $this->postJson(route('assistant.ask'), ['question' => 'The whole balance please'])
+                ->assertJsonPath('result.status', 'declined')
+                ->assertJsonMissingPath('result.sources');
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_capitalized_unpaid_wording_uses_the_existing_verified_aggregate_skill(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));

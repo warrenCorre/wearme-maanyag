@@ -75,10 +75,12 @@ class AssistantAnswerService
         $pendingPeriod = $pendingStoreGoal && is_string($visitContext['period'] ?? null)
             ? ($this->storeTurnScreen->screenSalesFollowUp('what about '.$visitContext['period'])['period'] ?? null)
             : null;
+        $pendingGoal = in_array($visitContext['pending'] ?? null, ['sales_goal', 'sales_period', 'unpaid_goal'], true)
+            ? $visitContext['pending'] : null;
 
         if ((($decision['model_candidate'] ?? false) && $screened === null)
             || ($pendingStoreGoal && $decision['intent'] === 'clarification')) {
-            $natural = $this->modelIntentService->interpret($question, $pendingPeriod);
+            $natural = $this->modelIntentService->interpret($question, $pendingPeriod, $pendingGoal);
 
             if ($natural !== null && $natural['question'] === null) {
                 $period = $natural['period'];

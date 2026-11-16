@@ -25,6 +25,29 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_pending_clarification_sends_only_its_goal_and_current_turn_before_the_store_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Validated pending goal: unpaid_goal. Current screened store turn: the whole balance please')
+            ->andReturn('{"intent":"unpaid_summary","period":"none","scope":"overall"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'The whole balance please',
+            CarbonImmutable::parse('2026-11-16'),
+            ['pending' => 'unpaid_goal', 'store_topic' => 'inventory', 'chat_history' => [
+                ['turn' => 'fictional prior question', 'reply' => 'fictional old answer'],
+            ]],
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
     public function test_consented_screened_existing_sales_questions_reach_model_interpretation_before_the_store_gate(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

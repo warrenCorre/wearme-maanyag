@@ -27,7 +27,8 @@ class FakeGeminiClient extends GeminiClient
             }
 
             $result = match ($prompt) {
-                'Current screened store turn: give me the big picture on how the shop did last month' => ['store_goal', 'last month'],
+                'Current screened store turn: give me the big picture on how the shop did last month',
+                'Validated pending goal: sales_period. Current screened store turn: give me the big picture on how the shop did last month' => ['store_goal', 'last month'],
                 'Current screened store turn: how much did the register ring up yesterday' => ['sales_summary', 'yesterday'],
                 'Current screened store turn: pila atong halin last week' => ['sales_summary', 'last week'],
                 'Current screened store turn: pila atong halin gahapon' => ['sales_summary', 'yesterday'],
@@ -37,6 +38,10 @@ class FakeGeminiClient extends GeminiClient
                 'Current screened store turn: how much money came in from sales yesterday' => ['sales_summary', 'yesterday'],
                 'Current screened store turn: can you give me an idea of how sales are doing' => ['sales_goal', 'none'],
                 'Current screened store turn: how many are unpaid yet' => ['unpaid_summary', 'none'],
+                'Validated pending goal: sales_goal. Current screened store turn: just the totals please' => ['sales_period', 'none'],
+                'Validated pending goal: sales_period. Current screened store turn: yesterday would be great' => ['sales_summary', 'yesterday'],
+                'Validated pending goal: unpaid_goal. Current screened store turn: the whole balance please',
+                'Validated pending goal: unpaid_goal. Current screened store turn: pila tanan nga wala nabayran' => ['unpaid_summary', 'none'],
                 'Validated pending period: last month. Current screened store turn: sales totals' => ['sales_summary', 'last month'],
                 default => null,
             };
