@@ -95,6 +95,22 @@ class AssistantModelIntentServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_summary_questions_require_the_same_period_and_skill_as_the_screened_turn(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: summarize sales last month')
+            ->andReturn('{"intent":"sales_summary","period":"last week"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: summarize inventory')
+            ->andReturn('{"intent":"low_stock","period":"none"}');
+
+        $this->assertNull($this->service($client)->suggest('Could you give me a quick overview of sales last month?'));
+        $this->assertNull($this->service($client)->suggest('What does our inventory look like?'));
+        Http::assertNothingSent();
+    }
+
     public function test_a_new_descriptive_frame_stays_local_without_conversation_consent(): void
     {
         config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => true]);
@@ -102,6 +118,7 @@ class AssistantModelIntentServiceTest extends TestCase
         $client->shouldNotReceive('generateText');
 
         $this->assertNull($this->service($client)->suggest('How did our sales fare last month?'));
+        $this->assertNull($this->service($client)->suggest('What does our inventory look like?'));
         Http::assertNothingSent();
     }
 

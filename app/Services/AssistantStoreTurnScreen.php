@@ -42,6 +42,8 @@ class AssistantStoreTurnScreen
 
     private const DESCRIPTIVE_FRAME = '/\A(?:how (?:did|were|are|is|do|does|has|have) (?:(?:our|the) )?(?:sales|inventory|unpaid balances|best sellers|collections)(?: [a-z]+){1,5}|what is the (?:[a-z]+ )?(?:inventory|collection) [a-z]+|which (?:items|products) are running [a-z]+ low)\z/D';
 
+    private const SALES_PERIOD_PATTERN = 'today|yesterday|(?:this|last) (?:week|month|year)';
+
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */
     public function screen(string $question): ?array
     {
@@ -59,6 +61,15 @@ class AssistantStoreTurnScreen
 
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
         $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
+
+        if (substr_count($turn, ' ') >= 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
+            || preg_match('/\b(?:by|from|with|under|over|at|per)\b/', $turn) === 1
+            || preg_match('/\b(?:sales|inventory|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
+            || preg_match('/\b(?:for|in|during)\s+(?!(?:today|yesterday|this (?:week|month|year)|last (?:week|month|year)|stock)\b)[a-z]+\b/', $turn) === 1) {
+            return null;
+        }
+
+        $turn = $this->normalizeSummaryQuestion($turn);
         $words = explode(' ', $turn);
         $corrected = false;
 
@@ -69,13 +80,6 @@ class AssistantStoreTurnScreen
             }
         }
         unset($word);
-
-        if (count($words) > 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
-            || preg_match('/\b(?:by|from|with|under|over|at|per)\b/', $turn) === 1
-            || preg_match('/\b(?:sales|inventory|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
-            || preg_match('/\b(?:for|in|during)\s+(?!(?:today|yesterday|this (?:week|month|year)|last (?:week|month|year)|stock)\b)[a-z]+\b/', $turn) === 1) {
-            return null;
-        }
 
         $unfamiliar = array_diff($words, self::WORDS);
         $isDescriptiveFrame = preg_match(self::DESCRIPTIVE_FRAME, $turn) === 1;
@@ -112,7 +116,7 @@ class AssistantStoreTurnScreen
             return null;
         }
 
-        preg_match_all('/\b(today|yesterday|this week|this month|this year|last week|last month|last year)\b/', $turn, $periods);
+        preg_match_all('/\b('.self::SALES_PERIOD_PATTERN.')\b/', $turn, $periods);
 
         if (count($periods[0]) > 1
             || ($this->hasAny($words, ['today', 'yesterday', 'week', 'month', 'year', 'last']) && $periods[0] === [])) {
@@ -148,6 +152,24 @@ class AssistantStoreTurnScreen
             'low_stock' => $this->hasAny($words, ['low']),
             'corrected' => $corrected,
         ];
+    }
+
+    private function normalizeSummaryQuestion(string $turn): string
+    {
+        $subject = '(?:our |the )?(sales|inventory)';
+        $period = '(?:(?: for| in| during)? ('.self::SALES_PERIOD_PATTERN.'))?';
+        $politeRequest = '/\A(?:can|could|would) you (?:give|show) (?:me|us) (?:a |an |the )?(?:(?:brief|quick|overall) )?(?:overview|snapshot|summary) of '.$subject.$period.'\z/';
+        $indirectQuestion = '/\Awhat (?:does|did) '.$subject.' look like'.$period.'\z/';
+
+        if (preg_match($politeRequest, $turn, $matches) !== 1 && preg_match($indirectQuestion, $turn, $matches) !== 1) {
+            return $turn;
+        }
+
+        if ($matches[1] === 'inventory' && str_starts_with($turn, 'what did ')) {
+            return $turn;
+        }
+
+        return rtrim('summarize '.$matches[1].' '.($matches[2] ?? ''));
     }
 
     /** @param  list<string>  $words */

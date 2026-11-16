@@ -190,7 +190,7 @@ class GeminiClientTest extends TestCase
             $fake->generateText('Unsupported DEMO request.', null, ['properties' => ['intent' => ['type' => 'string']]]);
             $this->fail('Expected unsupported request to be refused.');
         } catch (\RuntimeException $exception) {
-            $this->assertSame('The DEMO fake supports only sales answers, clarification styles, and fixed screened sales classifier turns.', $exception->getMessage());
+            $this->assertSame('The DEMO fake supports only verified answers, clarification styles, and fixed screened classifier turns.', $exception->getMessage());
         }
 
         try {
@@ -270,6 +270,38 @@ class GeminiClientTest extends TestCase
         }
 
         Http::assertNothingSent();
+    }
+
+    public function test_demo_fake_only_classifies_fixed_summary_turns_and_requires_inventory_totals(): void
+    {
+        $fake = new FakeGeminiClient;
+        $instruction = 'Never provide an answer, store fact, customer detail, identifier, action, SQL, extra field, or new skill.';
+        $schema = ['properties' => [
+            'intent' => ['enum' => ['sales_summary', 'inventory_summary']],
+            'period' => ['enum' => ['none', 'last month']],
+        ]];
+
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Current screened store turn: summarize sales last month', $instruction, $schema,
+        ));
+        $this->assertSame('{"intent":"inventory_summary","period":"none"}', $fake->generateText(
+            'Current screened store turn: summarize inventory', $instruction, $schema,
+        ));
+
+        try {
+            $fake->generateText('Current screened store turn: what does our inventory look like', $instruction, $schema);
+            $this->fail('Expected the DEMO fake to reject wording outside its fixed prompts.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('DEMO fake supports only', $exception->getMessage());
+        }
+
+        $prompt = "Verified system context (JSON):\n".json_encode([
+            'allowed_sources' => [['type' => 'inventory', 'label' => 'Inventory summary', 'as_of' => '2026-11-16']],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Only verified inventory summaries');
+        $fake->generateText($prompt, null, ['properties' => ['answer' => ['type' => 'string']]]);
     }
 
     public function test_demo_fake_classifies_low_stock_and_uses_only_verified_demo_inventory(): void

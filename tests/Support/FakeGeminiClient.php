@@ -25,10 +25,19 @@ class FakeGeminiClient extends GeminiClient
             'Current screened store turn: how did our sales go last month',
             'Current screened store turn: how are our sales descriptor last month',
             'Current screened store turn: how did our sales descriptor last month',
+            'Current screened store turn: summarize sales last month',
             'Verified topic label: sales. Current screened store turn: could you show the last month too',
             'Verified topic label: sales. Current screened store turn: how did we do last month' => 'last month',
             default => null,
         };
+
+        if (isset($responseSchema['properties']['intent'])
+            && $prompt === 'Current screened store turn: summarize inventory'
+            && str_contains($systemInstruction ?? '', 'Never provide an answer, store fact, customer detail')
+            && in_array('inventory_summary', $responseSchema['properties']['intent']['enum'] ?? [], true)
+            && in_array('none', $responseSchema['properties']['period']['enum'] ?? [], true)) {
+            return '{"intent":"inventory_summary","period":"none"}';
+        }
 
         if (isset($responseSchema['properties']['intent'])
             && $screenedSalesPeriod !== null
@@ -63,7 +72,7 @@ class FakeGeminiClient extends GeminiClient
         }
 
         if (! isset($responseSchema['properties']['answer'])) {
-            throw new RuntimeException('The DEMO fake supports only sales answers, clarification styles, and fixed screened sales classifier turns.');
+            throw new RuntimeException('The DEMO fake supports only verified answers, clarification styles, and fixed screened classifier turns.');
         }
 
         $prefix = "Verified system context (JSON):\n";
@@ -76,6 +85,33 @@ class FakeGeminiClient extends GeminiClient
         $context = json_decode(substr($prompt, $position + strlen($prefix)), true, 512, JSON_THROW_ON_ERROR);
         $source = $context['allowed_sources'][0] ?? null;
         $sales = $context['sales'] ?? null;
+
+        if (($source['type'] ?? null) === 'inventory' && ($source['label'] ?? null) === 'Inventory summary'
+            && is_string($source['as_of'] ?? null)) {
+            $inventory = $context['inventory']['stats'] ?? [];
+            $productCount = $inventory['product_count'] ?? null;
+            $units = $inventory['total_units'] ?? null;
+            $value = $inventory['stock_value'] ?? null;
+
+            if (! is_int($productCount) || $productCount < 0 || ! is_int($units) || $units < 0 || ! is_numeric($value) || $value < 0) {
+                throw new RuntimeException('Only verified inventory summaries can be used by the DEMO fake.');
+            }
+
+            return json_encode([
+                'answer' => sprintf(
+                    'Recorded inventory: %d active %s, %d %s, stock value PHP %s.',
+                    $productCount,
+                    $productCount === 1 ? 'product' : 'products',
+                    $units,
+                    $units === 1 ? 'unit' : 'units',
+                    $value,
+                ),
+                'answer_type' => 'fact',
+                'sources' => [$source],
+                'confidence' => 'high',
+                'refusal' => false,
+            ], JSON_THROW_ON_ERROR);
+        }
 
         if (($source['type'] ?? null) === 'inventory' && ($source['label'] ?? null) === 'Low-stock products'
             && is_array($context['inventory']['low_stock_products'] ?? null)

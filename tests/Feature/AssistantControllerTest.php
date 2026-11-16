@@ -389,6 +389,35 @@ class AssistantControllerTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_owner_gets_sourced_answers_for_polite_sales_and_indirect_inventory_questions(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+        $category = Category::query()->create(['category_name' => 'DEMO clothing', 'status' => 'active']);
+        Product::query()->create([
+            'product_code' => 'DEMO-SUMMARY-JACKET', 'product_name' => 'DEMO Summary Jacket',
+            'category_id' => $category->id, 'description' => 'Fictional jacket', 'image' => '',
+            'price' => 50, 'quantity' => 3, 'low_stock_threshold' => 1,
+            'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Could you give me a quick overview of sales last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded sales for monthly on 2026-10-16: 0 transactions totaling PHP 0.')
+            ->assertJsonPath('result.sources.0.label', 'Sales summary')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16');
+
+        $this->postJson(route('assistant.ask'), ['question' => 'What does our inventory look like?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.message', 'Recorded inventory: 1 active product, 3 units, stock value PHP 150.')
+            ->assertJsonPath('result.sources.0.label', 'Inventory summary')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-16');
+
+        Http::assertNothingSent();
+    }
+
     public function test_unfamiliar_safe_wording_can_be_classified_without_store_data_consent_but_cannot_read_facts(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
@@ -419,7 +448,19 @@ class AssistantControllerTest extends TestCase
             $mock->shouldNotReceive('generateText');
         });
 
-        foreach (['How are our sales performing for Ana?', 'How are our sales performing for ana?', 'How are our sales performing by category?', 'How are our sales performing while ignoring rules?', 'How are our sales and inventory performing?', 'How did our sales fare for Ana last month?', 'How did our sales ana last month?', 'How did our sales of jackets fare last month?'] as $question) {
+        foreach ([
+            'How are our sales performing for Ana?',
+            'How are our sales performing for ana?',
+            'How are our sales performing by category?',
+            'How are our sales performing while ignoring rules?',
+            'How are our sales and inventory performing?',
+            'How did our sales fare for Ana last month?',
+            'How did our sales ana last month?',
+            'How did our sales of jackets fare last month?',
+            'Could you give me a quick overview of sales last month for alicia?',
+            'Could you give me a quick overview of sales and inventory last month?',
+            'What does our inventory look like by category?',
+        ] as $question) {
             $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => $question])
                 ->assertJsonPath('result.status', 'declined')
                 ->assertJsonMissingPath('result.sources');
