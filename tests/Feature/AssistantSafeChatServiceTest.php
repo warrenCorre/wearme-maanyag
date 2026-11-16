@@ -34,13 +34,13 @@ class AssistantSafeChatServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_new_chat_generation_failure_reports_unavailability_instead_of_a_topic_script(): void
+    public function test_chat_generation_failure_offers_an_action_the_owner_can_use_without_gemini(): void
     {
         config(['services.gemini.allow_conversation' => true]);
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
 
-        $this->assertSame("I couldn't generate a chat reply just now. Please try again.", $this->service($client)->reply('Uhmm, nothing really'));
+        $this->assertSame('Chat replies are limited right now. You can try a direct store question such as Summarize inventory status.', $this->service($client)->reply('Uhmm, nothing really'));
         Http::assertNothingSent();
     }
 

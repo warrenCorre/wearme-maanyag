@@ -106,7 +106,7 @@ class AssistantSafeChatService
     private function fallback(string $safeTurn): string
     {
         if ($this->turnScreen->screen($safeTurn) === null) {
-            return "I couldn't generate a chat reply just now. Please try again.";
+            return 'Chat replies are limited right now. You can try a direct store question such as Summarize inventory status.';
         }
 
         return match (true) {

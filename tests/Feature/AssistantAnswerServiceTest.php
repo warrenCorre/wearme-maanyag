@@ -15,6 +15,7 @@ use App\Services\AssistantSafeChatService;
 use App\Services\AssistantSafeTurnScreen;
 use App\Services\AssistantStockAdjustmentService;
 use App\Services\AssistantStoreTurnScreen;
+use App\Services\AssistantVerifiedFallback;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
@@ -35,7 +36,7 @@ class AssistantAnswerServiceTest extends TestCase
 
         $this->assertSame([
             'status' => 'unavailable',
-            'message' => "I couldn't interpret that message just now. Please try again.",
+            'message' => "I couldn't interpret that message right now. You can try a greeting or ask directly, for example: Show me sales for this month, Summarize inventory status, or List low-stock products.",
         ], $this->makeAnswerService($context, $client)->answer('Uhmm, nothing really'));
         Http::assertNothingSent();
     }
@@ -903,7 +904,7 @@ class AssistantAnswerServiceTest extends TestCase
         $this->assertStringNotContainsString('total_sales', $capturedPrompt);
     }
 
-    public function test_it_rejects_invalid_structured_output_without_returning_raw_text(): void
+    public function test_invalid_provider_output_is_replaced_by_a_verified_sales_answer(): void
     {
         config(['services.gemini.allow_store_data' => true]);
 
@@ -922,9 +923,9 @@ class AssistantAnswerServiceTest extends TestCase
             CarbonImmutable::parse('2026-11-01'),
         );
 
-        $this->assertSame('invalid', $result['status']);
-        $this->assertSame('The assistant could not produce a verified answer. Please try again.', $result['message']);
-        $this->assertStringNotContainsString('not-json', $result['message']);
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded monthly sales for 2026-11-01: 4 transactions totaling PHP 125.00.', $result['message']);
+        $this->assertSame([['type' => 'sales', 'label' => 'Sales summary', 'as_of' => '2026-11-01']], $result['sources']);
     }
 
     public function test_it_returns_a_validated_refusal_when_the_model_refuses(): void
@@ -1032,7 +1033,7 @@ class AssistantAnswerServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_inventory_answer_failure_remains_unavailable_rather_than_inventing_a_local_summary(): void
+    public function test_inventory_follow_up_returns_verified_totals_when_gemini_times_out(): void
     {
         config(['services.gemini.allow_store_data' => true]);
         $contextService = Mockery::mock(AssistantContextService::class);
@@ -1040,10 +1041,74 @@ class AssistantAnswerServiceTest extends TestCase
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic answer timeout'));
 
-        $result = $this->makeAnswerService($contextService, $client)->answer('Summarize inventory status');
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'What about inventory?', visitContext: ['intent' => 'sales_summary'],
+        );
 
-        $this->assertSame('unavailable', $result['status']);
-        $this->assertArrayNotHasKey('sources', $result);
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('Recorded inventory: 1 active product, 2 units, stock value PHP 30.00.', $result['message']);
+        $this->assertSame([['type' => 'inventory', 'label' => 'Inventory summary', 'as_of' => '2026-11-02']], $result['sources']);
+        $this->assertSame(['intent' => 'inventory_summary'], $result['visit_context']);
+        Http::assertNothingSent();
+    }
+
+    public function test_failed_provider_answers_use_only_the_records_for_each_list_skill(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        $context = $this->salesContext();
+        $context['inventory']['low_stock_products'] = [
+            ['product_name' => 'DEMO Tee', 'quantity' => 1, 'low_stock_threshold' => 2],
+        ];
+        $context['best_sellers'] = [['product_name' => 'DEMO Jacket', 'units_sold' => 3, 'sales_total' => 300.0]];
+        $context['collection_dates'] = [['product_name' => 'DEMO Scarf', 'collection_date' => '2026-11-01']];
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->times(3)->andReturn($context);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->times(3)->andThrow(new RuntimeException('Synthetic provider outage'));
+        $service = $this->makeAnswerService($contextService, $client);
+
+        foreach ([
+            ['List low-stock products', 'Products at or below their stock threshold: DEMO Tee (1 unit left).', 'inventory', 'Low-stock products', 'low_stock'],
+            ['List best-selling products', 'Best sellers by units from all recorded paid sales: DEMO Jacket (3 paid units).', 'best_sellers', 'Best sellers', 'best_sellers'],
+            ['List recently collected products', 'Most recently collected active products with recorded dates: DEMO Scarf (2026-11-01).', 'collection_dates', 'Collection dates', 'collection_dates'],
+        ] as [$question, $answer, $source, $label, $intent]) {
+            $result = $service->answer($question);
+
+            $this->assertSame('answered', $result['status']);
+            $this->assertSame($answer, $result['message']);
+            $this->assertSame([['type' => $source, 'label' => $label, 'as_of' => '2026-11-02']], $result['sources']);
+            $this->assertSame(['intent' => $intent], $result['visit_context']);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_fallback_distinguishes_a_verified_empty_list_from_a_missing_list_or_invalid_date(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+        $context = $this->salesContext();
+        $contexts = [
+            [...$context, 'collection_dates' => []],
+            $context,
+            [...$context, 'collection_dates' => [['product_name' => 'DEMO Scarf', 'collection_date' => '2026-02-30']]],
+        ];
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldReceive('build')->times(3)->andReturn(...$contexts);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->times(3)->andThrow(new RuntimeException('Synthetic provider outage'));
+        $service = $this->makeAnswerService($contextService, $client);
+
+        $empty = $service->answer('List recently collected products');
+        $this->assertSame('answered', $empty['status']);
+        $this->assertSame('No active products have a recorded collection date.', $empty['message']);
+        $this->assertSame('collection_dates', $empty['sources'][0]['type']);
+
+        foreach (['missing list', 'bad date'] as $reason) {
+            $result = $service->answer('List recently collected products');
+            $this->assertSame('unavailable', $result['status'], $reason);
+            $this->assertArrayNotHasKey('sources', $result, $reason);
+        }
         Http::assertNothingSent();
     }
 
@@ -1253,6 +1318,7 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen, new AssistantStoreTurnScreen),
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
+            new AssistantVerifiedFallback,
         );
     }
 }

@@ -142,6 +142,12 @@ class AssistantModelIntentService
 
     public function suggest(string $question): ?string
     {
+        return $this->suggestWithStatus($question)['question'] ?? null;
+    }
+
+    /** @return array{question: ?string, unavailable?: true}|null */
+    public function suggestWithStatus(string $question): ?array
+    {
         if (! config('services.gemini.allow_conversation', false) || ($screened = $this->turnScreen->screen($question)) === null) {
             return null;
         }
@@ -149,7 +155,7 @@ class AssistantModelIntentService
         $response = $this->classify('Current screened store turn: '.$screened['turn']);
 
         if ($response === null) {
-            return null;
+            return ['question' => null, 'unavailable' => true];
         }
 
         $intent = $response['intent'];
@@ -157,14 +163,14 @@ class AssistantModelIntentService
 
         if ($intent === 'sales_summary' && $screened['topic'] === 'sales'
             && $screened['period'] !== null && $period === $screened['period']) {
-            return 'Show me sales for '.$period;
+            return ['question' => 'Show me sales for '.$period];
         }
 
         if ($period !== 'none' || $screened['period'] !== null) {
             return null;
         }
 
-        return match ($screened['topic']) {
+        $canonical = match ($screened['topic']) {
             'sales' => $intent === ($screened['count_goal'] ? 'sales_period' : 'sales_goal')
                 ? ($screened['count_goal'] ? 'How many transactions?' : 'Sales?') : null,
             'unpaid' => $intent === ($screened['count_goal'] ? 'unpaid_summary' : 'unpaid_goal')
@@ -175,6 +181,8 @@ class AssistantModelIntentService
             'collection_dates' => $intent === 'collection_dates' ? 'List recently collected products' : null,
             default => null,
         };
+
+        return ['question' => $canonical];
     }
 
     public function suggestSalesFollowUp(string $question): ?string

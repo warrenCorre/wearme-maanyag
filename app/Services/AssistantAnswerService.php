@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use LogicException;
 use RuntimeException;
 
 class AssistantAnswerService
@@ -23,6 +24,7 @@ class AssistantAnswerService
         private AssistantSafeChatService $safeChatService,
         private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantModelIntentService $modelIntentService,
+        private AssistantVerifiedFallback $verifiedFallback,
     ) {}
 
     /**
@@ -40,6 +42,7 @@ class AssistantAnswerService
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
         $screened = $this->storeTurnScreen->screen($question);
         $knownBestSellerQuestion = $decision['allowed'] && $decision['intent'] === 'best_sellers';
+        $interpretationFailed = false;
 
         if (! $decision['allowed'] && $screened !== null && $screened['corrected']) {
             $decision = $this->questionPolicy->evaluate($screened['turn'], $referenceDate, $visitContext);
@@ -57,7 +60,9 @@ class AssistantAnswerService
             || ($decision['allowed'] && ! $screened['corrected'] && in_array($decision['intent'], [
                 'sales_summary', 'inventory_summary', 'low_stock', 'collection_dates', 'unpaid_summary',
             ], true)))) {
-            $canonicalQuestion = $this->modelIntentService->suggest($question);
+            $suggestion = $this->modelIntentService->suggestWithStatus($question);
+            $canonicalQuestion = $suggestion['question'] ?? null;
+            $interpretationFailed = $suggestion['unavailable'] ?? false;
 
             if ($canonicalQuestion !== null) {
                 $modelDecision = $this->questionPolicy->evaluate($canonicalQuestion, $referenceDate, $visitContext);
@@ -83,25 +88,14 @@ class AssistantAnswerService
             $natural = $this->modelIntentService->interpret($question, $pendingPeriod, $pendingGoal);
 
             if ($natural['unavailable'] ?? false) {
-                if (! $decision['allowed']) {
-                    return ['status' => 'unavailable', 'message' => "I couldn't interpret that message just now. Please try again."];
-                }
-
+                $interpretationFailed = true;
                 $natural = null;
             }
 
             if (isset($natural['chat_turn'])) {
                 $decision = ['allowed' => true, 'intent' => 'general_chat', 'chat_turn' => $natural['chat_turn']];
             } elseif ($natural !== null && $natural['question'] === null) {
-                $period = $natural['period'];
-
-                return [
-                    'status' => 'clarification',
-                    'message' => $period !== null
-                        ? 'For '.$period.', would you like sales totals or transaction counts?'
-                        : 'Which store information would you like: sales, inventory, low stock, best sellers, collections, or aggregate unpaid balances?',
-                    'visit_context' => ['pending' => 'store_goal', 'period' => $period],
-                ];
+                return $this->clarify('store_goal', $natural['period']);
             } elseif ($natural !== null) {
                 $decision = $this->questionPolicy->evaluate($natural['question'], $referenceDate);
             } elseif ($pendingPeriod !== null && ($decision['clarification'] ?? null) === 'sales_period') {
@@ -110,6 +104,17 @@ class AssistantAnswerService
         }
 
         if (! $decision['allowed']) {
+            if ($interpretationFailed) {
+                if ($pendingStoreGoal || $pendingGoal !== null) {
+                    return $this->clarify($pendingGoal ?? 'store_goal', $pendingPeriod);
+                }
+
+                return [
+                    'status' => 'unavailable',
+                    'message' => "I couldn't interpret that message right now. You can try a greeting or ask directly, for example: Show me sales for this month, Summarize inventory status, or List low-stock products.",
+                ];
+            }
+
             return [
                 'status' => 'declined',
                 'message' => $decision['reason'] ?? 'That question is not supported.',
@@ -182,16 +187,7 @@ class AssistantAnswerService
         if ($decision['intent'] === 'clarification') {
             $topic = $decision['clarification'];
 
-            return [
-                'status' => 'clarification',
-                'message' => $this->conversationService->reply('clarification', $topic) ?? match ($topic) {
-                    'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
-                    'sales_period' => 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
-                    'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
-                    'latest_pending_sale_confirmation' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
-                },
-                'visit_context' => ['pending' => $topic],
-            ];
+            return $this->clarify($topic, message: $this->conversationService->reply('clarification', $topic));
         }
 
         if ($decision['intent'] === 'latest_unpaid_sale') {
@@ -281,9 +277,8 @@ class AssistantAnswerService
                 $prompt['system_instruction'],
                 AssistantResponseValidator::RESPONSE_SCHEMA,
             );
-        } catch (ConnectionException|RequestException|RuntimeException) {
-            return $this->verifiedSalesFallback($decision, $relevantContext, $allowedSources)
-                ?? $this->verifiedUnpaidFallback($decision, $relevantContext, $allowedSources)
+        } catch (ConnectionException|RequestException|RuntimeException|LogicException) {
+            return $this->verifiedFallback->answer($decision, $relevantContext, $allowedSources)
                 ?? [
                     'status' => 'unavailable',
                     'message' => 'The assistant is temporarily unavailable. Please try again.',
@@ -293,7 +288,7 @@ class AssistantAnswerService
         $validation = $this->responseValidator->validate($rawResponse, $relevantContext, $allowedSources);
 
         if (! $validation['valid'] || $validation['response'] === null) {
-            return [
+            return $this->verifiedFallback->answer($decision, $relevantContext, $allowedSources) ?? [
                 'status' => 'invalid',
                 'message' => 'The assistant could not produce a verified answer. Please try again.',
             ];
@@ -311,66 +306,21 @@ class AssistantAnswerService
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $decision
-     * @param  array<string, mixed>  $context
-     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
-     * @return array<string, mixed>|null
-     */
-    private function verifiedSalesFallback(array $decision, array $context, array $allowedSources): ?array
+    /** @return array{status: 'clarification', message: string, visit_context: array{pending: string, period?: ?string}} */
+    private function clarify(string $topic, ?string $period = null, ?string $message = null): array
     {
-        $sales = $context['sales'] ?? null;
-        $summary = is_array($sales) ? ($sales['summary'] ?? null) : null;
-
-        if (($decision['intent'] ?? null) !== 'sales_summary' || ! is_array($summary)
-            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'sales'
-            || ! in_array($decision['period'] ?? null, ['daily', 'weekly', 'monthly', 'yearly'], true)
-            || ($sales['period'] ?? null) !== $decision['period'] || ($sales['date'] ?? null) !== $decision['date']
-            || ! is_int($summary['transaction_count'] ?? null) || $summary['transaction_count'] < 0
-            || ! is_float($summary['total_sales'] ?? null) || ! is_finite($summary['total_sales'])
-            || $summary['total_sales'] < 0) {
-            return null;
-        }
-
-        $count = $summary['transaction_count'];
-
         return [
-            'status' => 'answered',
-            'message' => 'Recorded '.$decision['period'].' sales for '.$decision['date'].': '.$count.' '.($count === 1 ? 'transaction' : 'transactions').' totaling PHP '.number_format($summary['total_sales'], 2, '.', ',').'.',
-            'sources' => $allowedSources,
-            'answer_type' => 'fact',
-            'confidence' => 'high',
-            'visit_context' => ['intent' => 'sales_summary'],
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $decision
-     * @param  array<string, mixed>  $context
-     * @param  array<int, array{type: string, label: string, as_of: string}>  $allowedSources
-     * @return array<string, mixed>|null
-     */
-    private function verifiedUnpaidFallback(array $decision, array $context, array $allowedSources): ?array
-    {
-        $summary = $context['unpaid_summary'] ?? null;
-
-        if (($decision['intent'] ?? null) !== 'unpaid_summary' || ! is_array($summary)
-            || count($allowedSources) !== 1 || $allowedSources[0]['type'] !== 'unpaid_summary'
-            || ! is_int($summary['pending_transaction_count'] ?? null) || $summary['pending_transaction_count'] < 0
-            || ! is_float($summary['outstanding_balance'] ?? null) || ! is_finite($summary['outstanding_balance'])
-            || $summary['outstanding_balance'] < 0) {
-            return null;
-        }
-
-        $count = $summary['pending_transaction_count'];
-
-        return [
-            'status' => 'answered',
-            'message' => 'Recorded aggregate unpaid balances: '.$count.' pending '.($count === 1 ? 'sale' : 'sales').' with PHP '.number_format($summary['outstanding_balance'], 2, '.', ',').' outstanding.',
-            'sources' => $allowedSources,
-            'answer_type' => 'fact',
-            'confidence' => 'high',
-            'visit_context' => ['intent' => 'unpaid_summary'],
+            'status' => 'clarification',
+            'message' => $message ?? match ($topic) {
+                'sales_goal' => 'For sales, would you like totals, transaction counts, best sellers, or unpaid balances?',
+                'sales_period' => 'Which period for sales totals: today, yesterday, this week, last week, this month, last month, this year, or last year?',
+                'unpaid_goal' => 'Do you mean the aggregate unpaid balance or the latest pending sale? I can show either one.',
+                'latest_pending_sale_confirmation' => 'Do you mean the latest pending unpaid sale? Reply yes to look it up, or no to cancel.',
+                'store_goal' => $period !== null
+                    ? 'For '.$period.', would you like sales totals or transaction counts?'
+                    : 'Which store information would you like: sales, inventory, low stock, best sellers, collections, or aggregate unpaid balances?',
+            },
+            'visit_context' => ['pending' => $topic, ...($topic === 'store_goal' ? ['period' => $period] : [])],
         ];
     }
 
@@ -393,16 +343,16 @@ class AssistantAnswerService
             ],
             'low_stock' => [
                 'inventory' => [
-                    'low_stock_products' => $context['inventory']['low_stock_products'] ?? [],
+                    'low_stock_products' => $context['inventory']['low_stock_products'] ?? null,
                 ],
             ],
             'best_sellers' => $this->withScope(
-                ['best_sellers' => $context['best_sellers'] ?? []],
+                ['best_sellers' => $context['best_sellers'] ?? null],
                 $context,
                 'best_sellers',
             ),
             'collection_dates' => $this->withScope(
-                ['collection_dates' => $context['collection_dates'] ?? []],
+                ['collection_dates' => $context['collection_dates'] ?? null],
                 $context,
                 'collection_dates',
             ),

@@ -23,6 +23,20 @@ class AssistantModelIntentServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_bounded_interpretation_distinguishes_failed_calls_from_valid_unsupported_choices(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
+        $client->shouldReceive('generateText')->once()->andReturn('{"intent":"none","period":"none"}');
+        $service = $this->service($client);
+        $question = 'Could we talk about how our sales are doing?';
+
+        $this->assertSame(['question' => null, 'unavailable' => true], $service->suggestWithStatus($question));
+        $this->assertSame(['question' => null], $service->suggestWithStatus($question));
+        Http::assertNothingSent();
+    }
+
     public function test_malformed_interpretation_is_unavailable_even_with_a_pending_goal(): void
     {
         config(['services.gemini.allow_conversation' => true]);

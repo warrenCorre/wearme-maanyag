@@ -12,6 +12,7 @@ use App\Services\AssistantResponseValidator;
 use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\Support\FakeGeminiClient;
@@ -20,6 +21,44 @@ use Tests\TestCase;
 class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_owner_can_move_from_chat_to_sourced_store_follow_ups_during_a_provider_outage(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->atLeast()->once()->andThrow(new ConnectionException('Simulated outage'));
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertSee('Chat replies are limited right now');
+        $this->postJson(route('assistant.ask'), ['question' => 'Uhmm, nothing really'])
+            ->assertJsonPath('result.status', 'unavailable')
+            ->assertSee('Summarize inventory status');
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertSee('transaction counts');
+        $this->postJson(route('assistant.ask'), ['question' => 'Just the totals please'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertSee('transaction counts');
+        $this->postJson(route('assistant.ask'), ['question' => 'Totals'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertSee('Which period');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.label', 'Sales summary');
+        $this->postJson(route('assistant.ask'), ['question' => 'Could you show the previous month too?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('monthly sales for 2026-10-16');
+        $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.label', 'Inventory summary')
+            ->assertSee('0 active products, 0 units, stock value PHP 0.00');
+        Http::assertNothingSent();
+    }
 
     public function test_generated_chat_does_not_lose_pending_sales_choices_or_the_validated_period(): void
     {
