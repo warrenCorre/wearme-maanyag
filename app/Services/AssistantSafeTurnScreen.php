@@ -4,7 +4,7 @@ namespace App\Services;
 
 class AssistantSafeTurnScreen
 {
-    /** Public chat vocabulary, not a list of reply templates. Unknown words stay local. */
+    /** Recognized local chat; unfamiliar wording can use the separately screened model route. */
     private const WORDS = [
         'a', 'about', 'also', 'an', 'and', 'another', 'are', 'be', 'can', 'chat', 'cheerful',
         'clothes', 'clothing', 'could', 'do', 'enjoy', 'fashion', 'feel', 'feels', 'for',
@@ -24,6 +24,32 @@ class AssistantSafeTurnScreen
     ];
 
     private const ACKNOWLEDGEMENTS = ['ok', 'okay', 'alright', 'got it'];
+
+    public function screenForModel(string $question, AssistantStoreTurnScreen $storeTurnScreen): ?string
+    {
+        if (($knownTurn = $this->screen($question)) !== null) {
+            return $knownTurn;
+        }
+
+        $question = trim($question);
+        $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/', ' ', strtolower($question)) ?? '') ?? '');
+
+        if (strlen($question) <= 100 && preg_match('/\A[a-zA-Z ?.!,\x27-]+\z/D', $question) === 1
+            && preg_match('/\A(?:(?:hi|hello|hey)(?: (?:there|maanyag))?|good (?:morning|afternoon|evening)(?: maanyag)?|(?:thanks|thank you|salamat)(?: maanyag)?|how are you(?: doing)?|hows it going|how is it going|hows your day|whats up|what are you up to|what can you do|how can you help|who are you|can we chat|can you chat with me|bye|goodbye|see you(?: later)?)\z/D', $turn) === 1) {
+            return $turn;
+        }
+
+        $screened = $storeTurnScreen->screenNaturalIntent($question, allowPublicChat: true);
+
+        if ($screened === null
+            || $storeTurnScreen->screenSalesFollowUp($question) !== null
+            || preg_match('/\b(?:sales?|transactions?|inventory|stock|products?|items?|balances?|unpaid|pending|payments?|revenue|profit|prices?|collections?|collected|sellers?|totals?|counts?|records?|reports?|halin|baligya|utang|nabayran|my|medical|health|diagnosed|politics|president|capital|news|forecast)\b/', $screened['turn']) === 1
+            || preg_match('/\A(?:what|who|when|where) (?:is|are)\b/', $screened['turn']) === 1) {
+            return null;
+        }
+
+        return $screened['turn'];
+    }
 
     public function screen(string $question): ?string
     {
