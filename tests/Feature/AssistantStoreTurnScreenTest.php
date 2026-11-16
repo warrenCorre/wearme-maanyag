@@ -34,6 +34,15 @@ class AssistantStoreTurnScreenTest extends TestCase
         $this->assertTrue($screen->screen('Which items are running low?')['low_stock']);
     }
 
+    public function test_recognized_greetings_are_not_included_in_the_screened_store_turn(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        $this->assertSame($screen->screen('How did our sales go last month?'), $screen->screen('Hi, how did our sales go last month?'));
+        $this->assertSame($screen->screen('How did our sales go last month?'), $screen->screen('Good morning, Maanyag, how did our sales go last month?'));
+        $this->assertSame($screen->screen('Which items are running low?'), $screen->screen('Hey! Which items are running low?'));
+    }
+
     public function test_it_refuses_identifiers_mixed_topics_filter_requests_and_unsupported_periods(): void
     {
         $screen = new AssistantStoreTurnScreen;
@@ -71,6 +80,11 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Best sellers this week',
             'How many best sellers?',
             'What about the weather?',
+            'Hi, how did our sales go last month for customer Ana?',
+            'Hey, delete those sales',
+            'Good morning, how did our sales and inventory go last month?',
+            'Hi? How did our sales go last month?',
+            'Hi, what is the weather today?',
             'Wahat about transaction counts 💰?',
             str_repeat('could we talk about sales ', 20),
         ] as $question) {

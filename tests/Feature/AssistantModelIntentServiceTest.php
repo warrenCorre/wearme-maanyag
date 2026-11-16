@@ -101,6 +101,30 @@ class AssistantModelIntentServiceTest extends TestCase
         }
     }
 
+    public function test_greeting_is_removed_before_classifying_the_screened_current_store_turn(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how did our sales go last month')
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggest('Hi, how did our sales go last month?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_a_greeted_known_sales_question_still_requires_a_matching_model_period(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: show me sales for this month')
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertNull($this->service($client)->suggest('Hello, show me sales for this month?'));
+        Http::assertNothingSent();
+    }
+
     public function test_low_stock_items_paraphrase_is_classified_from_only_the_screened_current_turn(): void
     {
         config(['services.gemini.allow_conversation' => true]);
