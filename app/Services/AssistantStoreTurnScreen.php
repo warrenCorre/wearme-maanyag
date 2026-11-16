@@ -40,6 +40,8 @@ class AssistantStoreTurnScreen
 
     private const UNSAFE_TERMS = '/\b(?:account|address|api|brand|buyer|category|city|client|code|color|contact|customer|email|id|identifier|invoice|key|location|mobile|name|order|password|person|phone|pin|province|receipt|reference|region|secret|size|token|whose|who|ignore|ignoring|disregard|instruction|instructions|prompt|system|developer|bypass|override|forget|pretend|role|rules|quarter|quarters|daily|weekly|monthly|yearly)\b/';
 
+    private const DESCRIPTIVE_FRAME = '/\A(?:how (?:did|were|are|is|do|does|has|have) (?:(?:our|the) )?(?:sales|inventory|unpaid balances|best sellers|collections)(?: [a-z]+){1,5}|what is the (?:[a-z]+ )?(?:inventory|collection) [a-z]+|which (?:items|products) are running [a-z]+ low)\z/D';
+
     /** @return array{turn: string, topic: string, period: ?string, count_goal: bool, low_stock: bool, corrected: bool}|null */
     public function screen(string $question): ?array
     {
@@ -51,7 +53,7 @@ class AssistantStoreTurnScreen
 
         $question = preg_replace('/\A(?:hi|hello|hey|good (?:morning|afternoon|evening))(?:,? (?:there|maanyag))?(?:[,!]\s*|\s+)(?=\S)/i', '', $question) ?? $question;
 
-        if (preg_match('/\b[A-Z][a-z]+\b/', substr($question, strpos($question, ' ') ?: strlen($question))) === 1) {
+        if (preg_match('/\b(?:[A-Z][a-z]+|[A-Z]{2,})\b|[a-z][A-Z]/', substr($question, strpos($question, ' ') ?: strlen($question))) === 1) {
             return null;
         }
 
@@ -70,22 +72,33 @@ class AssistantStoreTurnScreen
 
         if (count($words) > 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
             || preg_match('/\b(?:by|from|with|under|over|at|per)\b/', $turn) === 1
+            || preg_match('/\b(?:sales|inventory|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
             || preg_match('/\b(?:for|in|during)\s+(?!(?:today|yesterday|this (?:week|month|year)|last (?:week|month|year)|stock)\b)[a-z]+\b/', $turn) === 1) {
             return null;
         }
 
         $unfamiliar = array_diff($words, self::WORDS);
+        $isDescriptiveFrame = preg_match(self::DESCRIPTIVE_FRAME, $turn) === 1;
 
         if (count($unfamiliar) > 2) {
             return null;
         }
 
         foreach ($unfamiliar as $word) {
-            if (preg_match('/\A[a-z]{4,}(?:ing|ly)\z/D', $word) !== 1) {
+            if (strlen($word) < 4 || (! $isDescriptiveFrame
+                && preg_match('/\A[a-z]{4,}(?:ing|ly)\z/D', $word) !== 1)) {
                 return null;
             }
         }
 
+        if ($unfamiliar !== [] && $this->hasAny($words, ['and', 'or'])) {
+            return null;
+        }
+
+        $screenedTurn = implode(' ', array_map(
+            fn (string $word): string => in_array($word, self::WORDS, true) ? $word : 'descriptor',
+            $words,
+        ));
         $turn = implode(' ', $words);
         $unpaid = $this->hasAny($words, ['unpaid', 'pending', 'outstanding', 'owe', 'owed', 'owing']);
         $bestSellers = $this->hasAny($words, ['best', 'top', 'sellers'])
@@ -128,7 +141,7 @@ class AssistantStoreTurnScreen
         }
 
         return [
-            'turn' => $turn,
+            'turn' => $screenedTurn,
             'topic' => $topic,
             'period' => $period,
             'count_goal' => $this->hasAny($words, ['many', 'count', 'counts', 'much', 'total', 'totals', 'revenue', 'balance', 'balances']),

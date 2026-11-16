@@ -59,12 +59,12 @@ class AssistantModelIntentServiceTest extends TestCase
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
 
         foreach ([
-            ['How are our sales performing last month?', 'how are our sales performing last month', 'sales_summary', 'last month', 'Show me sales for last month'],
-            ['How is our inventory tracking?', 'how is our inventory tracking', 'inventory_summary', 'none', 'Summarize inventory status'],
-            ['Which items are running critically low?', 'which items are running critically low', 'low_stock', 'none', 'List low-stock products'],
-            ['How are our unpaid balances trending?', 'how are our unpaid balances trending', 'unpaid_summary', 'none', 'How many unpaid transactions?'],
-            ['How are best sellers performing?', 'how are best sellers performing', 'best_sellers', 'none', 'List best-selling products'],
-            ['How are collections progressing?', 'how are collections progressing', 'collection_dates', 'none', 'List recently collected products'],
+            ['How are our sales performing last month?', 'how are our sales descriptor last month', 'sales_summary', 'last month', 'Show me sales for last month'],
+            ['How is our inventory tracking?', 'how is our inventory descriptor', 'inventory_summary', 'none', 'Summarize inventory status'],
+            ['Which items are running critically low?', 'which items are running descriptor low', 'low_stock', 'none', 'List low-stock products'],
+            ['How are our unpaid balances trending?', 'how are our unpaid balances descriptor', 'unpaid_summary', 'none', 'How many unpaid transactions?'],
+            ['How are best sellers performing?', 'how are best sellers descriptor', 'best_sellers', 'none', 'List best-selling products'],
+            ['How are collections progressing?', 'how are collections descriptor', 'collection_dates', 'none', 'List recently collected products'],
         ] as [$question, $turn, $intent, $period, $canonical]) {
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->once()
@@ -76,6 +76,66 @@ class AssistantModelIntentServiceTest extends TestCase
                 ->andReturn(json_encode(['intent' => $intent, 'period' => $period], JSON_THROW_ON_ERROR));
 
             $this->assertSame($canonical, $this->service($client)->suggest($question), $question);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_a_new_descriptive_frame_reaches_the_classifier_only_after_redaction(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => $prompt === 'Current screened store turn: how did our sales descriptor last month'
+                && ! str_contains($prompt, 'fare')
+                && in_array('sales_summary', $schema['properties']['intent']['enum'], true))
+            ->andReturn('{"intent":"sales_summary","period":"last month"}');
+
+        $this->assertSame('Show me sales for last month', $this->service($client)->suggest('How did our sales fare last month?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_a_new_descriptive_frame_stays_local_without_conversation_consent(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $this->assertNull($this->service($client)->suggest('How did our sales fare last month?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_new_inventory_and_ranking_frames_still_require_matching_approved_skills(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            ['What is the overall inventory picture?', 'what is the descriptor inventory descriptor', 'inventory_summary', 'Summarize inventory status'],
+            ['How do best sellers compare?', 'how do best sellers descriptor', 'best_sellers', 'List best-selling products'],
+            ['What is the collection outlook?', 'what is the collection descriptor', 'collection_dates', 'List recently collected products'],
+        ] as [$question, $turn, $intent, $expected]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: '.$turn)
+                ->andReturn(json_encode(['intent' => $intent, 'period' => 'none'], JSON_THROW_ON_ERROR));
+
+            $this->assertSame($expected, $this->service($client)->suggest($question));
+        }
+
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andReturn('{"intent":"unpaid_summary","period":"none"}');
+        $this->assertNull($this->service($client)->suggest('What is the overall inventory picture?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_unknown_identifiers_and_filters_still_make_zero_provider_calls(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        foreach (['How did our sales Ana last month?', 'How did our sales ana last month?', 'How did our sales ABCD last month?', 'How did our sales demoBuyer last month?', 'How did our sales fare for ana last month?', 'How did our sales of jackets fare last month?', 'What is the inventory picture for customer Ana?', 'How do best sellers compare with DEMO-JACKET?'] as $question) {
+            $this->assertNull($this->service($client)->suggest($question), $question);
         }
 
         Http::assertNothingSent();

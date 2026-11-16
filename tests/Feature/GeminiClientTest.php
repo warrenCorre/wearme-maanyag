@@ -246,15 +246,25 @@ class GeminiClientTest extends TestCase
         ]];
 
         $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
-            'Current screened store turn: how are our sales performing last month', $instruction, $schema,
+            'Current screened store turn: how are our sales descriptor last month', $instruction, $schema,
+        ));
+        $this->assertSame('{"intent":"sales_summary","period":"last month"}', $fake->generateText(
+            'Current screened store turn: how did our sales descriptor last month', $instruction, $schema,
         ));
         $this->assertSame('{"intent":"low_stock","period":"none"}', $fake->generateText(
-            'Current screened store turn: which items are running critically low', $instruction, $schema,
+            'Current screened store turn: which items are running descriptor low', $instruction, $schema,
         ));
 
         try {
             $fake->generateText('Current screened store turn: how are our sales performing for ana', $instruction, $schema);
             $this->fail('Expected the DEMO fake to reject a private turn.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('DEMO fake supports only', $exception->getMessage());
+        }
+
+        try {
+            $fake->generateText('Current screened store turn: how did our sales fare last month', $instruction, $schema);
+            $this->fail('Expected the DEMO fake to refuse unredacted unfamiliar wording.');
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('DEMO fake supports only', $exception->getMessage());
         }
