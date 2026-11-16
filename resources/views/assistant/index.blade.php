@@ -34,7 +34,7 @@
                     <span aria-hidden="true">＋</span> New Chat
                 </a>
                 <p class="mt-3 text-xs font-medium leading-relaxed text-slate-500">Follow up during this visit. With conversation sharing enabled, up to 40 screened public-chat exchanges are temporarily kept and may be sent to Gemini. New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.</p>
-                <p class="mt-3 text-xs font-medium leading-relaxed text-amber-900">Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill. Free-text screening can miss a private detail. Do not enter names, contacts, sale numbers, or secrets. Store-data sharing requires separate approval; Gemini cannot directly access the database.</p>
+                <p class="mt-3 text-xs font-medium leading-relaxed text-amber-900">Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill. Brief casual replies can reach Gemini as typed after basic privacy checks. Free-text screening can miss a private detail, including a lowercase name. Do not enter names, contacts, sale numbers, or secrets. Store-data sharing requires separate approval; Gemini cannot directly access the database.</p>
             </div>
 
             <div class="rounded-2xl border-2 border-slate-900 bg-white p-5">

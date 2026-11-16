@@ -13,6 +13,18 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_whole_store_wording_with_our_shop_can_request_a_metric_without_store_data(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how are things with our shop')
+            ->andReturn('{"intent":"store_goal","period":"none","scope":"overall"}');
+
+        $this->assertSame(['question' => null, 'period' => null], $this->service($client)->interpret('How are things with our shop?'));
+        Http::assertNothingSent();
+    }
+
     public function test_broad_store_update_can_request_clarification_without_routing_to_a_fact_or_inventing_a_period(): void
     {
         config(['services.gemini.allow_conversation' => true]);

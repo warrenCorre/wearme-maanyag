@@ -18,6 +18,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             ['How are things in the shop?', 'how are things in the shop', null],
             ['How did things go at the store last month?', 'how did things go at the store last month', 'last month'],
             ['How was business in our shop for last week?', 'how was business in our shop for last week', 'last week'],
+            ['How are things with our shop?', 'how are things with our shop', null],
+            ['How is everything with the store right now?', 'how is everything with the store right now', null],
         ] as [$question, $turn, $period]) {
             $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question), $question);
         }
@@ -32,6 +34,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             'What happened at the store in cebu right now?',
             'What is selling in the store ana for now?',
             'How are things at the shop for ana right now?',
+            'How are things with our shop for alicia?',
+            'How is everything with the store in cebu right now?',
             'How are sales by brand in the store for now?',
             'How are things in the store at the moment for ana?',
             'How is the shop doing in the store last quarter?',

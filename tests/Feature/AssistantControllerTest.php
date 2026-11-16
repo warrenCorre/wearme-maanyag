@@ -22,6 +22,45 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_owner_can_correct_a_chat_reply_without_repeating_its_words(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: hey')
+                ->andReturn('{"kind":"general_chat","reply":"Hey there, glad you dropped by."}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"reply":"Hey there, glad you dropped by."')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: not wonderful'))
+                ->andReturn('{"kind":"general_chat","reply":"Sorry it has been rough. Happy to listen."}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"reply":"Sorry it has been rough. Happy to listen."')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: not fantastic'))
+                ->andReturn('{"kind":"general_chat","reply":"I hear you. Want to tell me more?"}');
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Not wonderful'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'Sorry it has been rough. Happy to listen.')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'Not fantastic'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'I hear you. Want to tell me more?');
+        $this->postJson(route('assistant.ask'), ['question' => 'Not Alicia'])
+            ->assertJsonPath('result.status', 'declined');
+
+        $this->get(route('assistant.index'))->assertOk();
+        $this->postJson(route('assistant.ask'), ['question' => 'Not fantastic'])
+            ->assertJsonPath('result.status', 'declined');
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_move_from_chat_to_a_broad_store_question_then_select_a_verified_skill(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
@@ -1201,7 +1240,8 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Follow up during this visit');
         $response->assertSee('With conversation sharing enabled, up to 40 screened public-chat exchanges are temporarily kept and may be sent to Gemini.');
         $response->assertSee('Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill.');
-        $response->assertSee('Free-text screening can miss a private detail.');
+        $response->assertSee('Brief casual replies can reach Gemini as typed after basic privacy checks.');
+        $response->assertSee('Free-text screening can miss a private detail, including a lowercase name.');
         $response->assertSee('Store-data sharing requires separate approval; Gemini cannot directly access the database.');
         $response->assertSee('New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.');
         $response->assertDontSee('chats are not saved');

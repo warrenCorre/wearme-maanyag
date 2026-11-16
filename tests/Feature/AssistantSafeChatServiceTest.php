@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class AssistantSafeChatServiceTest extends TestCase
 {
-    public function test_short_reactions_cannot_borrow_a_word_from_an_older_or_unverified_reply(): void
+    public function test_short_reactions_need_valid_public_history_but_no_matching_reply_word(): void
     {
         config(['services.gemini.allow_conversation' => true]);
         $client = Mockery::mock(GeminiClient::class);
@@ -24,15 +24,18 @@ class AssistantSafeChatServiceTest extends TestCase
             ['turn' => 'okay', 'reply' => 'Happy to chat a little more.'],
         ];
 
-        $this->assertNull($service->screenedFollowUp('Not peaceful', $history));
+        $this->assertSame('not peaceful', $service->screenedFollowUp('Not peaceful', $history));
+        $this->assertSame('too awkward', $service->screenedFollowUp('Too awkward', $history));
+        $this->assertSame('not fantastic', $service->screenedFollowUp('Not fantastic', $history));
         $this->assertNull($service->screenedFollowUp('Not ana', $history));
+        $this->assertNull($service->screenedFollowUp('Not Alicia', $history));
         $this->assertNull($service->screenedFollowUp('Too Happy', $history));
         $this->assertNull($service->screenedFollowUp('Not calm', [
             ['turn' => 'hey', 'reply' => 'Your password is calm.'],
         ]));
         $this->assertSame([], $service->screenedHistory([
             ...$history,
-            ['turn' => 'not peaceful', 'reply' => 'Happy to listen.'],
+            ['turn' => 'not ana', 'reply' => 'Happy to listen.'],
         ]));
         $this->assertSame(
             $service->reply('Not peaceful'),
@@ -206,10 +209,24 @@ class AssistantSafeChatServiceTest extends TestCase
             'not json',
         ] as $output) {
             $client = Mockery::mock(GeminiClient::class);
-            $client->shouldReceive('generateText')->once()->andReturn($output);
+            $client->shouldReceive('generateText')->twice()->andReturn($output);
 
             $this->assertStringContainsString('thrift joke', $this->service($client)->reply('tell me a joke about thrift shopping'), $output);
         }
+    }
+
+    public function test_an_unsafe_first_reply_can_be_rewritten_without_sharing_it_again(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->andReturn('{"kind":"general_chat","reply":"Your store has five jackets in stock."}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => ! str_contains($prompt, 'five jackets')
+                && str_contains($instruction, 'Write a different brief social reply.'))
+            ->andReturn('{"kind":"general_chat","reply":"I am glad to keep chatting with you."}');
+
+        $this->assertSame('I am glad to keep chatting with you.', $this->service($client)->reply('hey'));
     }
 
     public function test_provider_failure_uses_the_local_reply(): void

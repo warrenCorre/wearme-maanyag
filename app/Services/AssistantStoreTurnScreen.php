@@ -67,7 +67,7 @@ class AssistantStoreTurnScreen
         .')\b/';
 
     /** @return array{turn: string, period: ?string}|null */
-    public function screenNaturalIntent(string $question, bool $allowPublicChat = false): ?array
+    public function screenNaturalIntent(string $question, bool $allowPublicChat = false, bool $allowBriefPublicChat = false): ?array
     {
         $question = str_replace('’', "'", trim($question));
 
@@ -92,7 +92,7 @@ class AssistantStoreTurnScreen
         $turn = trim(preg_replace('/\s+/', ' ', preg_replace('/[?.!,\x27-]/u', ' ', mb_strtolower($question)) ?? '') ?? '');
         $turn = preg_replace('/\b(?:previous|prior) (week|month|year)\b/', 'last $1', $turn) ?? '';
 
-        if ((substr_count($turn, ' ') < 2 && $this->screen($question) === null)
+        if ((substr_count($turn, ' ') < 2 && $this->screen($question) === null && ! ($allowPublicChat && $allowBriefPublicChat))
             || ($this->screenSalesFollowUp($question) !== null && ! str_starts_with($turn, 'how '))
             || preg_match('/\b(?:list|show) (?:all|every)\b/', $turn) === 1
             || (! $allowPublicChat && preg_match('/\b(?:jokes?|chat|funny|fashion)\b/', $turn) === 1)) {
@@ -100,7 +100,7 @@ class AssistantStoreTurnScreen
         }
 
         $periodPattern = implode('|', self::NATURAL_PERIODS);
-        $genericStore = '\b(?:in|at|around) (?:the|our|this) (?:store|shop)';
+        $genericStore = '\b(?:in|at|around|with) (?:the|our|this) (?:store|shop)';
         $timeSuffix = '(?:'.self::CURRENT_TIME_PATTERN.'|(?:(?:for|in|during) )?(?:'.$periodPattern.'))';
         $scopeCheck = preg_replace(
             '/'.$genericStore.'(?= '.$timeSuffix.'\z|\z)|\b(?:'.self::CURRENT_TIME_PATTERN.')\z/',

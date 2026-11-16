@@ -22,8 +22,10 @@ class FakeGeminiClient extends GeminiClient
             $turn = $position !== false ? substr($prompt, $position + strlen($prefix)) : '';
             $reply = match ($turn) {
                 'hey' => 'Hi there! I hope you are having a wonderful day.',
+                'hi' => 'Hey there, glad you dropped by.',
                 'hey maanyag' => 'Hey! Happy to chat. How is it going?',
                 'not wonderful' => str_contains($prompt, 'I hope you are having a wonderful day.')
+                    || str_contains($prompt, 'Hey there, glad you dropped by.')
                     ? 'Sorry it has been a rough day. Happy to listen or keep things quiet.' : null,
                 'too quiet' => str_contains($prompt, 'Happy to listen or keep things quiet.')
                     ? 'Fair enough. Want a little distraction?' : null,
@@ -52,6 +54,7 @@ class FakeGeminiClient extends GeminiClient
 
             $result = match ($prompt) {
                 'Current screened store turn: what is going on in the store for now' => ['store_goal', 'none'],
+                'Current screened store turn: how are things with our shop' => ['store_goal', 'none'],
                 'Current screened store turn: uhmm nothing really',
                 'Current screened store turn: haha just hanging around',
                 'Current screened store turn: pwede ta magchika kadyot',
