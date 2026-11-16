@@ -25,6 +25,21 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_failed_interpretation_of_a_new_casual_turn_is_honestly_unavailable_without_store_access(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $context = Mockery::mock(AssistantContextService::class);
+        $context->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
+
+        $this->assertSame([
+            'status' => 'unavailable',
+            'message' => "I couldn't interpret that message just now. Please try again.",
+        ], $this->makeAnswerService($context, $client)->answer('Uhmm, nothing really'));
+        Http::assertNothingSent();
+    }
+
     public function test_pending_clarification_sends_only_its_goal_and_current_turn_before_the_store_gate(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
@@ -742,13 +757,13 @@ class AssistantAnswerServiceTest extends TestCase
         $contextService->shouldNotReceive('build');
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldReceive('generateText')->once()->withArgs(
-            fn (string $prompt): bool => str_contains($prompt, 'social / hi') && ! str_contains($prompt, 'My secret'),
-        )->andReturn('{"style":"bright","suggested_skill":"none"}');
+            fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: hi',
+        )->andReturn('{"kind":"general_chat","reply":"Hey! Glad to chat. What is on your mind?"}');
 
         $result = $this->makeAnswerService($contextService, $client)->answer('Hi!', CarbonImmutable::parse('2026-11-07'));
 
-        $this->assertSame('social', $result['status']);
-        $this->assertStringStartsWith('Hey! Lovely', $result['message']);
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('Hey! Glad to chat. What is on your mind?', $result['message']);
     }
 
     public function test_malformed_provider_output_uses_the_local_unpaid_clarification(): void
@@ -1235,9 +1250,9 @@ class AssistantAnswerServiceTest extends TestCase
             $latestSaleService ?? new AssistantLatestUnpaidSaleService,
             $damagedAdjustments ?? new AssistantDamagedAdjustmentService,
             $stockAdjustments ?? new AssistantStockAdjustmentService,
-            new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen),
+            new AssistantSafeChatService($geminiClient, new AssistantSafeTurnScreen, new AssistantStoreTurnScreen),
             new AssistantStoreTurnScreen,
-            new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen),
+            new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
         );
     }
 }

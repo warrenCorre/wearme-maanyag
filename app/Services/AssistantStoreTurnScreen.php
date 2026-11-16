@@ -65,7 +65,7 @@ class AssistantStoreTurnScreen
         .')\b/';
 
     /** @return array{turn: string, period: ?string}|null */
-    public function screenNaturalIntent(string $question): ?array
+    public function screenNaturalIntent(string $question, bool $allowPublicChat = false): ?array
     {
         $question = trim($question);
 
@@ -91,7 +91,8 @@ class AssistantStoreTurnScreen
 
         if ((substr_count($turn, ' ') < 2 && $this->screen($question) === null)
             || ($this->screenSalesFollowUp($question) !== null && ! str_starts_with($turn, 'how '))
-            || preg_match('/\b(?:list|show) (?:all|every)\b|\b(?:jokes?|chat|funny|fashion)\b/', $turn) === 1) {
+            || preg_match('/\b(?:list|show) (?:all|every)\b/', $turn) === 1
+            || (! $allowPublicChat && preg_match('/\b(?:jokes?|chat|funny|fashion)\b/', $turn) === 1)) {
             return null;
         }
 

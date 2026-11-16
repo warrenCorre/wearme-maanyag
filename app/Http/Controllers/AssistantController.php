@@ -84,26 +84,29 @@ class AssistantController extends Controller
                 ...($result['visit_context']['pending'] === 'store_goal'
                     ? ['period' => $result['visit_context']['period'] ?? null] : []),
             ], now()->addMinutes(20));
-        } elseif ($result['status'] === 'general_chat' && ($result['visit_context']['chat_topic'] ?? null) === 'thrift') {
-            $request->session()->cache()->put('assistant.visit_context', [
-                'owner_id' => $request->user()->id,
-                'chat_topic' => 'thrift',
-            ], now()->addMinutes(20));
-        } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['intent'] ?? null, [
-            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'damaged_adjustments', 'stock_adjustments',
-        ], true)) {
+        } elseif (($result['status'] === 'social' || ($result['visit_context']['social'] ?? false))
+            && in_array($trustedVisitContext['intent'] ?? null, [
+                'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'damaged_adjustments', 'stock_adjustments',
+            ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'intent' => $trustedVisitContext['intent'],
             ], now()->addMinutes(20));
-        } elseif ($result['status'] === 'social' && in_array($trustedVisitContext['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal', 'store_goal',
-        ], true)) {
+        } elseif (($result['status'] === 'social'
+            || ($result['status'] === 'general_chat' && config('services.gemini.allow_conversation', false)))
+            && in_array($trustedVisitContext['pending'] ?? null, [
+                'sales_goal', 'sales_period', 'unpaid_goal', 'store_goal',
+            ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'pending' => $trustedVisitContext['pending'],
                 ...($trustedVisitContext['pending'] === 'store_goal'
                     ? ['period' => $trustedVisitContext['period'] ?? null] : []),
+            ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'general_chat' && ($result['visit_context']['chat_topic'] ?? null) === 'thrift') {
+            $request->session()->cache()->put('assistant.visit_context', [
+                'owner_id' => $request->user()->id,
+                'chat_topic' => 'thrift',
             ], now()->addMinutes(20));
         }
 

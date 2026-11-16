@@ -16,6 +16,25 @@ class FakeGeminiClient extends GeminiClient
      */
     public function generateText(string $prompt, ?string $systemInstruction = null, ?array $responseSchema = null): string
     {
+        if (($responseSchema['properties']['kind']['enum'] ?? null) === ['general_chat']) {
+            $prefix = 'Current screened general-chat turn: ';
+            $position = strrpos($prompt, $prefix);
+            $turn = $position !== false ? substr($prompt, $position + strlen($prefix)) : '';
+            $reply = match ($turn) {
+                'hey maanyag' => 'Hey! Happy to chat. How is it going?',
+                'uhmm nothing really' => 'No worries, a little idle chat is welcome!',
+                'haha just hanging around' => 'Haha, sounds relaxed! Happy to keep you company.',
+                'pwede ta magchika kadyot' => 'Oo, pwede kaayo! Unsa may gusto nimong hisgutan?',
+                default => null,
+            };
+
+            if ($reply === null) {
+                throw new RuntimeException('The DEMO chat fake accepts only fixed fictional examples.');
+            }
+
+            return json_encode(['kind' => 'general_chat', 'reply' => $reply], JSON_THROW_ON_ERROR);
+        }
+
         if (isset($responseSchema['properties']['style'])) {
             return '{"style":"warm","suggested_skill":"none"}';
         }
@@ -27,6 +46,13 @@ class FakeGeminiClient extends GeminiClient
             }
 
             $result = match ($prompt) {
+                'Current screened store turn: uhmm nothing really',
+                'Current screened store turn: haha just hanging around',
+                'Current screened store turn: pwede ta magchika kadyot',
+                'Validated pending goal: sales_period. Current screened store turn: uhmm nothing really',
+                'Validated pending period: last month. Current screened store turn: uhmm nothing really' => ['general_chat', 'none'],
+                'Current screened store turn: the whole balance please',
+                'Current screened store turn: how did we do last month' => ['none', 'none'],
                 'Current screened store turn: give me the big picture on how the shop did last month',
                 'Validated pending goal: sales_period. Current screened store turn: give me the big picture on how the shop did last month' => ['store_goal', 'last month'],
                 'Current screened store turn: how much did the register ring up yesterday' => ['sales_summary', 'yesterday'],

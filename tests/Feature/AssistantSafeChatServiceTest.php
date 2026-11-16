@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\AssistantSafeChatService;
 use App\Services\AssistantSafeTurnScreen;
+use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -12,6 +13,37 @@ use Tests\TestCase;
 
 class AssistantSafeChatServiceTest extends TestCase
 {
+    public function test_unfamiliar_casual_wording_gets_the_generated_reply_and_only_screened_public_history(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened general-chat turn: honestly feeling kinda mellow')
+            ->andReturn('{"kind":"general_chat","reply":"A mellow moment sounds lovely. We can keep this easygoing!"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"turn":"honestly feeling kinda mellow","reply":"A mellow moment sounds lovely. We can keep this easygoing!"')
+                && str_ends_with($prompt, 'Current screened general-chat turn: nothing dramatic just a quiet moment'))
+            ->andReturn('{"kind":"general_chat","reply":"Quiet moments can be nice. Happy to chat gently!"}');
+        $service = $this->service($client);
+        $first = $service->reply('Honestly feeling kinda mellow');
+
+        $this->assertSame('A mellow moment sounds lovely. We can keep this easygoing!', $first);
+        $this->assertSame('Quiet moments can be nice. Happy to chat gently!', $service->reply('Nothing dramatic just a quiet moment', [
+            ['turn' => 'honestly feeling kinda mellow', 'reply' => $first],
+        ]));
+        Http::assertNothingSent();
+    }
+
+    public function test_new_chat_generation_failure_reports_unavailability_instead_of_a_topic_script(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
+
+        $this->assertSame("I couldn't generate a chat reply just now. Please try again.", $this->service($client)->reply('Uhmm, nothing really'));
+        Http::assertNothingSent();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -138,6 +170,7 @@ class AssistantSafeChatServiceTest extends TestCase
             '{"kind":"general_chat","reply":"Visit https://example.test"}',
             '{"kind":"general_chat","reply":"Ana is your best buyer."}',
             '{"kind":"general_chat","reply":"My secret password is hidden."}',
+            '{"kind":"general_chat","reply":"Naa tay tulo ka produkto."}',
             '{"kind":"general_chat","reply":"A fun thought!","skill":"latest_unpaid_sale"}',
             '{"kind":"store_fact","reply":"A fun thought!"}',
             '{"kind":"general_chat","reply":"<script>alert(1)</script>"}',
@@ -162,6 +195,6 @@ class AssistantSafeChatServiceTest extends TestCase
 
     private function service(GeminiClient $client): AssistantSafeChatService
     {
-        return new AssistantSafeChatService($client, new AssistantSafeTurnScreen);
+        return new AssistantSafeChatService($client, new AssistantSafeTurnScreen, new AssistantStoreTurnScreen);
     }
 }

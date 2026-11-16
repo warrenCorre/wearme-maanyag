@@ -21,6 +21,67 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_generated_chat_does_not_lose_pending_sales_choices_or_the_validated_period(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Just the totals please'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Uhmm, nothing really'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday would be great'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('daily on 2026-11-15')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+        $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('monthly on 2026-10-16');
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Give me the big picture on how the shop did last month.'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Uhmm, nothing really'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales totals'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertSee('monthly on 2026-10-16');
+        Http::assertNothingSent();
+    }
+
+    public function test_gemini_writes_greetings_and_unfamiliar_casual_replies_without_store_access(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $owner = $this->createUser('store_owner');
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->actingAs($owner);
+
+        foreach ([
+            'Hey Maanyag' => 'Hey! Happy to chat. How is it going?',
+            'Uhmm, nothing really' => 'No worries, a little idle chat is welcome!',
+            'Haha, just hanging around' => 'Haha, sounds relaxed! Happy to keep you company.',
+            'Pwede ta magchika kadyot' => 'Oo, pwede kaayo! Unsa may gusto nimong hisgutan?',
+        ] as $question => $reply) {
+            $this->postJson(route('assistant.ask'), ['question' => $question])
+                ->assertJsonPath('result.status', 'general_chat')
+                ->assertJsonPath('result.message', $reply)
+                ->assertJsonMissingPath('result.sources')
+                ->assertJsonMissingPath('result.visit_context');
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_varied_replies_complete_sales_and_unpaid_clarifications(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
@@ -998,6 +1059,9 @@ class AssistantControllerTest extends TestCase
                 ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'clarification / sales_goal'))
                 ->andReturn('{"style":"warm","suggested_skill":"none"}');
             $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'clarification / sales_period'))
+                ->andReturn('{"style":"warm","suggested_skill":"none"}');
+            $mock->shouldReceive('generateText')->once()
                 ->withArgs(fn (string $prompt): bool => str_contains($prompt, 'A store question about sales happened since that chat.')
                     && str_ends_with($prompt, 'Current screened general-chat turn: tell me a joke about thrift shopping')
                     && ! str_contains($prompt, 'sales_goal'))
@@ -1012,7 +1076,8 @@ class AssistantControllerTest extends TestCase
                 'message' => 'A preloved jacket gets another chapter!',
             ]]);
         $this->postJson(route('assistant.ask'), ['question' => 'Totals'])
-            ->assertJsonPath('result.status', 'declined');
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources');
     }
 
     public function test_guest_is_redirected_to_login(): void

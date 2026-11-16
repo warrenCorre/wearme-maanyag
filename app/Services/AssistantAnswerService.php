@@ -32,7 +32,7 @@ class AssistantAnswerService
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
-     *     visit_context?: array{intent?: string, pending?: string, period?: ?string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>}
+     *     visit_context?: array{intent?: string, pending?: string, period?: ?string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>, social?: bool}
      * }
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
@@ -82,7 +82,17 @@ class AssistantAnswerService
             || ($pendingStoreGoal && $decision['intent'] === 'clarification')) {
             $natural = $this->modelIntentService->interpret($question, $pendingPeriod, $pendingGoal);
 
-            if ($natural !== null && $natural['question'] === null) {
+            if ($natural['unavailable'] ?? false) {
+                if (! $decision['allowed']) {
+                    return ['status' => 'unavailable', 'message' => "I couldn't interpret that message just now. Please try again."];
+                }
+
+                $natural = null;
+            }
+
+            if (isset($natural['chat_turn'])) {
+                $decision = ['allowed' => true, 'intent' => 'general_chat', 'chat_turn' => $natural['chat_turn']];
+            } elseif ($natural !== null && $natural['question'] === null) {
                 $period = $natural['period'];
 
                 return [
@@ -92,9 +102,7 @@ class AssistantAnswerService
                         : 'Which store information would you like: sales, inventory, low stock, best sellers, collections, or aggregate unpaid balances?',
                     'visit_context' => ['pending' => 'store_goal', 'period' => $period],
                 ];
-            }
-
-            if ($natural !== null) {
+            } elseif ($natural !== null) {
                 $decision = $this->questionPolicy->evaluate($natural['question'], $referenceDate);
             } elseif ($pendingPeriod !== null && ($decision['clarification'] ?? null) === 'sales_period') {
                 $decision = $this->questionPolicy->evaluate('Show me sales for '.$pendingPeriod, $referenceDate);
@@ -106,6 +114,13 @@ class AssistantAnswerService
                 'status' => 'declined',
                 'message' => $decision['reason'] ?? 'That question is not supported.',
             ];
+        }
+
+        if ($decision['intent'] === 'local_social'
+            && $decision['social_reply'] !== 'cancel_latest_pending_sale'
+            && config('services.gemini.allow_conversation', false)
+            && ($chatTurn = $this->safeChatService->screenedTurn($question)) !== null) {
+            $decision = ['allowed' => true, 'intent' => 'general_chat', 'chat_turn' => $chatTurn, 'social_reply' => $decision['social_reply']];
         }
 
         if ($decision['intent'] === 'local_social') {
@@ -159,6 +174,7 @@ class AssistantAnswerService
                 'visit_context' => [
                     'chat_topic' => 'thrift',
                     ...($conversationEnabled ? ['chat_history' => $history] : []),
+                    ...(isset($decision['social_reply']) ? ['social' => true] : []),
                 ],
             ];
         }

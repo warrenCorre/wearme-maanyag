@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\AssistantModelIntentService;
+use App\Services\AssistantSafeTurnScreen;
 use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -12,6 +13,68 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_interpretation_timeout_is_distinguished_from_an_unsupported_turn(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
+
+        $this->assertSame(['question' => null, 'period' => null, 'unavailable' => true], $this->service($client)->interpret('Uhmm, nothing really'));
+        Http::assertNothingSent();
+    }
+
+    public function test_malformed_interpretation_is_unavailable_even_with_a_pending_goal(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->twice()->andReturn('not json');
+        $service = $this->service($client);
+
+        $this->assertSame(['question' => null, 'period' => null, 'unavailable' => true], $service->interpret('The whole balance please', null, 'unpaid_goal'));
+        $this->assertSame(['question' => null, 'period' => null, 'unavailable' => true], $service->interpret('How much did the register ring up yesterday?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_model_can_choose_chat_for_unfamiliar_non_store_wording_without_generating_facts(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach (['Uhmm, nothing really', 'I could use a lighthearted chat', 'Pwede ta magchika kadyot'] as $question) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => str_starts_with($prompt, 'Current screened store turn: ')
+                    && str_contains($instruction, 'Do not write the chat reply')
+                    && in_array('general_chat', $schema['properties']['intent']['enum'], true))
+                ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+
+            $result = $this->service($client)->interpret($question);
+            $this->assertSame(null, $result['question']);
+            $this->assertSame(null, $result['period']);
+            $this->assertNotEmpty($result['chat_turn']);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_chat_choice_cannot_hide_business_scope_filters_or_invalid_arguments(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+
+        foreach ([
+            ['How many unpaid transactions are there', '{"intent":"general_chat","period":"none","scope":"overall"}'],
+            ['Uhmm, nothing really', '{"intent":"general_chat","period":"none","scope":"mixed"}'],
+            ['Uhmm, nothing really', '{"intent":"general_chat","period":"today","scope":"overall"}'],
+            ['Uhmm, nothing really', '{"intent":"general_chat","period":"none","scope":"overall","reply":"invented"}'],
+        ] as [$question, $response]) {
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()->andReturn($response);
+
+            $this->assertNull($this->service($client)->interpret($question));
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_pending_clarifications_supply_only_a_validated_goal_for_varied_replies(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -48,7 +111,6 @@ class AssistantModelIntentServiceTest extends TestCase
             '{"intent":"unpaid_summary","period":"yesterday","scope":"overall"}',
             '{"intent":"sales_summary","period":"today","scope":"overall"}',
             '{"intent":"unpaid_summary","period":"none","scope":"overall","sale_id":1}',
-            'not json',
         ] as $response) {
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->once()->andReturn($response);
@@ -130,7 +192,6 @@ class AssistantModelIntentServiceTest extends TestCase
             '{"intent":"delete_sales","period":"yesterday","scope":"overall"}',
             '{"intent":"low_stock","period":"none","scope":"overall"}',
             '{"intent":"store_goal","period":"none","scope":"overall"}',
-            'not json',
         ] as $response) {
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->once()->andReturn($response);
@@ -522,6 +583,6 @@ class AssistantModelIntentServiceTest extends TestCase
 
     private function service(GeminiClient $client): AssistantModelIntentService
     {
-        return new AssistantModelIntentService($client, new AssistantStoreTurnScreen);
+        return new AssistantModelIntentService($client, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen);
     }
 }
