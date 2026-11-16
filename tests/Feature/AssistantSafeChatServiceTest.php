@@ -13,6 +13,34 @@ use Tests\TestCase;
 
 class AssistantSafeChatServiceTest extends TestCase
 {
+    public function test_short_reactions_cannot_borrow_a_word_from_an_older_or_unverified_reply(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $service = $this->service($client);
+        $history = [
+            ['turn' => 'hey', 'reply' => 'Hope it has been a peaceful day.'],
+            ['turn' => 'okay', 'reply' => 'Happy to chat a little more.'],
+        ];
+
+        $this->assertNull($service->screenedFollowUp('Not peaceful', $history));
+        $this->assertNull($service->screenedFollowUp('Not ana', $history));
+        $this->assertNull($service->screenedFollowUp('Too Happy', $history));
+        $this->assertNull($service->screenedFollowUp('Not calm', [
+            ['turn' => 'hey', 'reply' => 'Your password is calm.'],
+        ]));
+        $this->assertSame([], $service->screenedHistory([
+            ...$history,
+            ['turn' => 'not peaceful', 'reply' => 'Happy to listen.'],
+        ]));
+        $this->assertSame(
+            $service->reply('Not peaceful'),
+            $service->reply('Not peaceful', [$history[0]], 'inventory'),
+        );
+        Http::assertNothingSent();
+    }
+
     public function test_unfamiliar_casual_wording_gets_the_generated_reply_and_only_screened_public_history(): void
     {
         config(['services.gemini.allow_conversation' => true]);

@@ -83,6 +83,15 @@ class AssistantAnswerService
         $pendingGoal = in_array($visitContext['pending'] ?? null, ['sales_goal', 'sales_period', 'unpaid_goal'], true)
             ? $visitContext['pending'] : null;
 
+        if (($decision['model_candidate'] ?? false) && $screened === null
+            && ($visitContext['pending'] ?? null) === null
+            && ($visitContext['intent'] ?? null) === null
+            && ($visitContext['store_topic'] ?? null) === null
+            && config('services.gemini.allow_conversation', false)
+            && ($chatTurn = $this->safeChatService->screenedFollowUp($question, $visitContext['chat_history'] ?? [])) !== null) {
+            $decision = ['allowed' => true, 'intent' => 'general_chat', 'chat_turn' => $chatTurn];
+        }
+
         if ((($decision['model_candidate'] ?? false) && $screened === null)
             || ($pendingStoreGoal && $decision['intent'] === 'clarification')) {
             $natural = $this->modelIntentService->interpret($question, $pendingPeriod, $pendingGoal);

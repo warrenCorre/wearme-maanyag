@@ -21,7 +21,12 @@ class FakeGeminiClient extends GeminiClient
             $position = strrpos($prompt, $prefix);
             $turn = $position !== false ? substr($prompt, $position + strlen($prefix)) : '';
             $reply = match ($turn) {
+                'hey' => 'Hi there! I hope you are having a wonderful day.',
                 'hey maanyag' => 'Hey! Happy to chat. How is it going?',
+                'not wonderful' => str_contains($prompt, 'I hope you are having a wonderful day.')
+                    ? 'Sorry it has been a rough day. Happy to listen or keep things quiet.' : null,
+                'too quiet' => str_contains($prompt, 'Happy to listen or keep things quiet.')
+                    ? 'Fair enough. Want a little distraction?' : null,
                 'uhmm nothing really' => 'No worries, a little idle chat is welcome!',
                 'haha just hanging around' => 'Haha, sounds relaxed! Happy to keep you company.',
                 'pwede ta magchika kadyot' => 'Oo, pwede kaayo! Unsa may gusto nimong hisgutan?',

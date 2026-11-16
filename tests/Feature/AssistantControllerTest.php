@@ -22,6 +22,32 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_short_reactions_follow_the_previous_public_reply_and_reset_with_new_chat(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertSee('having a wonderful day');
+        $this->postJson(route('assistant.ask'), ['question' => 'Not wonderful'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertSee('Happy to listen or keep things quiet')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'Too quiet'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertSee('Want a little distraction');
+
+        $this->get(route('assistant.index'))->assertOk();
+        $this->postJson(route('assistant.ask'), ['question' => 'Not wonderful'])
+            ->assertJsonPath('result.status', 'declined');
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_move_from_chat_to_sourced_store_follow_ups_during_a_provider_outage(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 10:00:00'));
