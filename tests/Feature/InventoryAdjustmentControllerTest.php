@@ -34,6 +34,9 @@ class InventoryAdjustmentControllerTest extends TestCase
             'quantity_after' => 7,
             'reason' => 'Found two units during stock count.',
         ]);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'inventory_adjusted', 'subject_type' => 'adjustment', 'actor_id' => $owner->id,
+        ]);
 
         $this->actingAs($owner)->get(route('products.adjustments.create', $product))
             ->assertOk()->assertSee('Found two units during stock count.')->assertSee($owner->name);
@@ -48,6 +51,7 @@ class InventoryAdjustmentControllerTest extends TestCase
             ->assertSessionHasErrors('direction');
         $this->assertSame(5, $product->fresh()->quantity);
         $this->assertDatabaseCount('tbl_inventory_adjustments', 0);
+        $this->assertDatabaseCount('tbl_store_activity_events', 0);
 
         $valid = array_replace($invalid, ['direction' => 'decrease', 'reason' => 'Torn fabric.']);
         $this->actingAs($owner)->post(route('products.adjustments.store', $product), $valid)

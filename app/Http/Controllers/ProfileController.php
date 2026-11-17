@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\StoreActivityRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
@@ -21,7 +23,7 @@ class ProfileController extends Controller
         return view('profile.edit', ['user' => Auth::user()]);
     }
 
-    public function update(Request $request): RedirectResponse
+    public function update(Request $request, StoreActivityRecorder $activities): RedirectResponse
     {
         $user = Auth::user();
 
@@ -40,7 +42,12 @@ class ProfileController extends Controller
             unset($validated['password']);
         }
 
-        $user->update($validated);
+        DB::transaction(function () use ($user, $validated, $activities): void {
+            $user->update($validated);
+            if ($user->wasChanged(['name', 'email', 'password'])) {
+                $activities->record('profile_updated', 'user', $user->id, $user->id);
+            }
+        });
 
         return redirect()->route('profile.show')
             ->with('status', 'Profile updated successfully.');

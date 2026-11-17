@@ -102,12 +102,13 @@ class AssistantStoreTurnScreen
         $periodPattern = implode('|', self::NATURAL_PERIODS);
         $publicChatFrame = $allowPublicChat
             && preg_match('/\b(?:store|shop|business|sales?|transactions?|inventory|stock|products?|items?|unpaid|payments?|balances?|revenue|money|halin|baligya|utang)\b/', $turn) !== 1;
-        $publicChatQualifier = $publicChatFrame ? '|a [a-z]{3,}' : '';
+        $publicChatQualifier = $publicChatFrame ? '|a [a-z]{3,}|me' : '';
         $publicChatSource = $publicChatFrame ? '|work\z' : '';
-        $genericStore = '\b(?:in|at|around|with) (?:the|our|this) (?:store|shop)';
+        $genericStore = '\b(?:in|at|around|with|for) (?:the|our|this) (?:store|shop)';
+        $aggregateTopic = '\bwith (?:(?:our|the) )?(?:sales|inventory|stock|unpaid balances)\b';
         $timeSuffix = '(?:'.self::CURRENT_TIME_PATTERN.'|(?:(?:for|in|during) )?(?:'.$periodPattern.'))';
         $scopeCheck = preg_replace(
-            '/'.$genericStore.'(?= '.$timeSuffix.'\z|\z)|\b(?:'.self::CURRENT_TIME_PATTERN.')\z/',
+            '/'.$genericStore.'(?= '.$timeSuffix.'\z|\z)|'.$aggregateTopic.'|\b(?:'.self::CURRENT_TIME_PATTERN.')\z/',
             '',
             $turn,
         ) ?? $turn;

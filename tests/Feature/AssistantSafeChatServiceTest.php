@@ -27,6 +27,9 @@ class AssistantSafeChatServiceTest extends TestCase
         $this->assertSame('not peaceful', $service->screenedFollowUp('Not peaceful', $history));
         $this->assertSame('too awkward', $service->screenedFollowUp('Too awkward', $history));
         $this->assertSame('not fantastic', $service->screenedFollowUp('Not fantastic', $history));
+        $this->assertSame('nothing much', $service->screenedFollowUp('Nothing much.', $history));
+        $this->assertSame('feeling better', $service->screenedFollowUp('Feeling better.', $history));
+        $this->assertNull($service->screenedFollowUp('Nothing much.', []));
         $this->assertNull($service->screenedFollowUp('Not ana', $history));
         $this->assertNull($service->screenedFollowUp('Not Alicia', $history));
         $this->assertNull($service->screenedFollowUp('Too Happy', $history));

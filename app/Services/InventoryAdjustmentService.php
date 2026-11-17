@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryAdjustmentService
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     /**
      * @param  array{direction: string, quantity: int|string, reason_kind: string, reason: string}  $data
      */
@@ -56,7 +58,7 @@ class InventoryAdjustmentService
                 'updated_by' => $owner->id,
             ]);
 
-            return $lockedProduct->inventoryAdjustments()->create([
+            $adjustment = $lockedProduct->inventoryAdjustments()->create([
                 'adjusted_by' => $owner->id,
                 'direction' => $data['direction'],
                 'quantity' => $quantity,
@@ -64,6 +66,9 @@ class InventoryAdjustmentService
                 'quantity_after' => $quantityAfter,
                 'reason' => $reason,
             ]);
+            $this->activities->record('inventory_adjusted', 'adjustment', $adjustment->id, $owner->id);
+
+            return $adjustment;
         });
     }
 }

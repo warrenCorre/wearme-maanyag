@@ -17,6 +17,9 @@ class AssistantSafeTurnScreenTest extends TestCase
         $this->assertSame('not wonderful', $screen->screenBriefFollowUp('Not wonderful', $storeScreen));
         $this->assertSame('too quiet', $screen->screenBriefFollowUp('Too quiet', $storeScreen));
         $this->assertSame('not fantastic', $screen->screenBriefFollowUp('Not fantastic', $storeScreen));
+        $this->assertSame('nothing much', $screen->screenBriefFollowUp('Nothing much.', $storeScreen));
+        $this->assertSame('feeling better', $screen->screenBriefFollowUp('Feeling better.', $storeScreen));
+        $this->assertNull($screen->screenForModel('Nothing much.', $storeScreen));
 
         foreach (['Not ana', 'Not Ana', 'Not Alicia', 'Too Barbara', 'Too Davao', 'Not unpaid', 'Not secret', 'Too 1234'] as $question) {
             $this->assertNull($screen->screenBriefFollowUp($question, $storeScreen), $question);
@@ -41,6 +44,7 @@ class AssistantSafeTurnScreenTest extends TestCase
             'My day has been slow, can we just chat?' => 'my day has been slow can we just chat',
             'I could use a break from work.' => 'i could use a break from work',
             'My mood has been low lately.' => 'my mood has been low lately',
+            "Honestly, it's been a slow day for me." => 'honestly it s been a slow day for me',
         ] as $question => $expected) {
             $this->assertSame($expected, $screen->screenForModel($question, $storeScreen), $question);
         }

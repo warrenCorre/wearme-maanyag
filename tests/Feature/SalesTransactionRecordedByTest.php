@@ -33,6 +33,9 @@ class SalesTransactionRecordedByTest extends TestCase
             'payment_status' => 'paid',
         ]);
         $this->assertSame($sale->id, $cashier->salesTransactions()->firstOrFail()->id);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'sale_created_paid', 'subject_id' => $sale->id, 'actor_id' => $cashier->id,
+        ]);
 
         $cashier->delete();
 
@@ -64,6 +67,12 @@ class SalesTransactionRecordedByTest extends TestCase
             'balance' => '5.00',
         ]);
         $this->assertSame(2, $product->fresh()->quantity);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'sale_created_unpaid', 'subject_id' => $sale->id, 'actor_id' => $owner->id,
+        ]);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'payment_partial', 'subject_id' => $sale->id, 'actor_id' => $owner->id,
+        ]);
     }
 
     public function test_sale_cannot_reference_a_nonexistent_recorder(): void

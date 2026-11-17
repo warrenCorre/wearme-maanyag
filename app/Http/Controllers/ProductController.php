@@ -4,15 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\StoreActivityRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ProductController extends Controller
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     public function index(): View
     {
         $products = Product::with('category')
@@ -40,7 +44,7 @@ class ProductController extends Controller
     public function create(): View
     {
         return view('products.form', [
-            'product' => new Product(),
+            'product' => new Product,
             'categories' => $this->activeCategories(),
         ]);
     }
@@ -53,7 +57,10 @@ class ProductController extends Controller
         $validated['created_by'] = Auth::id();
         $validated['updated_by'] = Auth::id();
 
-        Product::create($validated);
+        DB::transaction(function () use ($validated): void {
+            $product = Product::create($validated);
+            $this->activities->record('product_created', 'product', $product->id, (int) Auth::id());
+        });
 
         return redirect()->route('products.index')
             ->with('status', 'Product created successfully.');
@@ -79,7 +86,15 @@ class ProductController extends Controller
         }
 
         $validated['updated_by'] = Auth::id();
-        $product->update($validated);
+        DB::transaction(function () use ($product, $validated): void {
+            $product->update($validated);
+            if ($product->wasChanged([
+                'product_code', 'product_name', 'category_id', 'description', 'collection_date',
+                'price', 'quantity', 'low_stock_threshold', 'image',
+            ])) {
+                $this->activities->record('product_updated', 'product', $product->id, (int) Auth::id());
+            }
+        });
 
         if (isset($validated['image']) && $oldImage) {
             Storage::disk('public')->delete($oldImage);
@@ -97,11 +112,14 @@ class ProductController extends Controller
             ]);
         }
 
-        $product->update([
-            'status' => 'archived',
-            'updated_by' => Auth::id(),
-        ]);
-        $product->delete();
+        DB::transaction(function () use ($product): void {
+            $product->update([
+                'status' => 'archived',
+                'updated_by' => Auth::id(),
+            ]);
+            $product->delete();
+            $this->activities->record('product_archived', 'product', $product->id, (int) Auth::id());
+        });
 
         return redirect()->route('products.index')
             ->with('status', 'Product moved to the Archive.');
@@ -111,17 +129,20 @@ class ProductController extends Controller
     {
         $product = Product::withTrashed()->findOrFail($productId);
 
-        if (!$product->trashed()) {
+        if (! $product->trashed()) {
             return back()->withErrors([
                 'product' => 'Only archived products can be restored.',
             ]);
         }
 
-        $product->restore();
-        $product->update([
-            'status' => 'active',
-            'updated_by' => Auth::id(),
-        ]);
+        DB::transaction(function () use ($product): void {
+            $product->restore();
+            $product->update([
+                'status' => 'active',
+                'updated_by' => Auth::id(),
+            ]);
+            $this->activities->record('product_restored', 'product', $product->id, (int) Auth::id());
+        });
 
         return redirect()->route('products.archive.index')
             ->with('status', 'Product restored successfully.');
@@ -131,7 +152,7 @@ class ProductController extends Controller
     {
         $product = Product::withTrashed()->findOrFail($productId);
 
-        if (!$product->trashed()) {
+        if (! $product->trashed()) {
             return back()->withErrors([
                 'product' => 'Only archived products can be permanently removed.',
             ]);
@@ -144,7 +165,10 @@ class ProductController extends Controller
         }
 
         $image = $product->image;
-        $product->forceDelete();
+        DB::transaction(function () use ($product): void {
+            $this->activities->record('product_deleted', 'product', $product->id, (int) Auth::id());
+            $product->forceDelete();
+        });
 
         if ($image) {
             Storage::disk('public')->delete($image);

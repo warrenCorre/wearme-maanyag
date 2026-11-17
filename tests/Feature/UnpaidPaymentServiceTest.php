@@ -24,6 +24,7 @@ class UnpaidPaymentServiceTest extends TestCase
 
         $this->assertDatabaseCount('tbl_sales_transaction_items', 2);
         $this->assertDatabaseCount('tbl_unpaid_payments', 1);
+
         $this->assertDatabaseHas('tbl_sales_transactions', [
             'id' => $sale->id,
             'recorded_by' => $owner->id,
@@ -123,6 +124,12 @@ class UnpaidPaymentServiceTest extends TestCase
         $this->assertDatabaseHas('tbl_unpaid_payments', ['id' => $payment->id, 'amount_paid' => '20.00', 'balance' => '0.00', 'status' => 'settled']);
         $this->assertNotNull($payment->fresh()->payment_date);
         $this->assertDatabaseCount('tbl_unpaid_payments', 1);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'payment_partial', 'subject_id' => $sale->id, 'actor_id' => $owner->id,
+        ]);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'payment_settled', 'subject_id' => $sale->id, 'actor_id' => $owner->id,
+        ]);
 
         foreach ($products as $product) {
             $this->assertSame(2, $product->fresh()->quantity);
@@ -149,6 +156,9 @@ class UnpaidPaymentServiceTest extends TestCase
         $this->assertDatabaseHas('tbl_unpaid_payments', ['id' => $payment->id, 'amount_paid' => '15.00', 'balance' => '5.00', 'status' => 'pending']);
         $this->assertSame(2, $products[0]->fresh()->quantity);
         $this->assertSame(2, $newProduct->fresh()->quantity);
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'sale_updated', 'subject_id' => $sale->id, 'actor_id' => $owner->id,
+        ]);
     }
 
     public function test_invalid_cumulative_payment_rolls_back_new_items_and_stock(): void
