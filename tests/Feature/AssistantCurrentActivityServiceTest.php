@@ -24,10 +24,11 @@ class AssistantCurrentActivityServiceTest extends TestCase
         $this->assertStringContainsString('November 17, 2026 (Philippine time)', $answer);
         $this->assertStringContainsString('Sales recorded: 0 (transaction value PHP 0.00', $answer);
         $this->assertStringContainsString('Non-sales stock adjustments: 0', $answer);
-        $this->assertStringContainsString('Products added: 0', $answer);
-        $this->assertStringContainsString('Products dated for collection today: 0', $answer);
+        $this->assertStringContainsString('Products added in current records: 0', $answer);
+        $this->assertStringContainsString('Scheduled product collection dates today: 0', $answer);
         $this->assertStringContainsString('Previously unpaid sales settled: 0', $answer);
-        $this->assertStringContainsString('product edits and partial payments are not fully tracked', $answer);
+        $this->assertStringContainsString('Other tracked changes: none', $answer);
+        $this->assertStringContainsString('Older edits, partial payments, and account changes', $answer);
     }
 
     public function test_philippine_day_includes_utc_evening_and_excludes_the_next_local_day(): void
@@ -82,10 +83,39 @@ class AssistantCurrentActivityServiceTest extends TestCase
 
         $this->assertStringContainsString('Sales recorded: 1 (transaction value PHP 45.00', $answer);
         $this->assertStringContainsString('Non-sales stock adjustments: 1', $answer);
-        $this->assertStringContainsString('Products added: 1', $answer);
-        $this->assertStringContainsString('Products dated for collection today: 1', $answer);
+        $this->assertStringContainsString('Products added in current records: 1', $answer);
+        $this->assertStringContainsString('Scheduled product collection dates today: 1', $answer);
         $this->assertStringContainsString('Previously unpaid sales settled: 1', $answer);
         $this->assertStringNotContainsString('Synthetic', $answer);
         $this->assertStringNotContainsString('99.00', $answer);
+    }
+
+    public function test_it_counts_new_app_changes_and_shows_only_anonymous_recent_actions_with_philippine_times(): void
+    {
+        $owner = User::query()->create([
+            'name' => 'Synthetic Owner', 'email' => 'synthetic-activity-owner@example.test',
+            'password' => 'synthetic-password', 'phone' => '0000000000',
+            'address' => 'Synthetic address', 'role' => 'store_owner',
+            'profile_image' => '', 'status' => 'active',
+        ]);
+        DB::table('tbl_store_activity_events')->insert([
+            ['event_type' => 'product_updated', 'subject_type' => 'product', 'subject_id' => 91,
+                'actor_id' => $owner->id, 'created_at' => '2026-11-16 16:15:00'],
+            ['event_type' => 'payment_partial', 'subject_type' => 'sale', 'subject_id' => 92,
+                'actor_id' => $owner->id, 'created_at' => '2026-11-16 16:30:00'],
+            ['event_type' => 'cashier_updated', 'subject_type' => 'cashier', 'subject_id' => 93,
+                'actor_id' => $owner->id, 'created_at' => '2026-11-17 16:00:00'],
+        ]);
+
+        $answer = app(AssistantCurrentActivityService::class)->answer(
+            CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'),
+        );
+
+        $this->assertStringContainsString('product edits: 1; partial payments: 1', $answer);
+        $this->assertStringContainsString('Partial payment recorded (12:30 AM Philippine time)', $answer);
+        $this->assertStringContainsString('Product edited (12:15 AM Philippine time)', $answer);
+        $this->assertStringNotContainsString('cashier account changes: 1', $answer);
+        $this->assertStringNotContainsString('Synthetic Owner', $answer);
+        $this->assertStringNotContainsString('91', $answer);
     }
 }

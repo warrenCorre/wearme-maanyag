@@ -11,6 +11,8 @@ use Illuminate\Validation\ValidationException;
 
 class SalesTransactionService
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     public function createPaidSale(array $data, User $recordedBy): SalesTransaction
     {
         if (($data['payment_status'] ?? null) !== 'paid') {
@@ -103,6 +105,8 @@ class SalesTransactionService
                 ]);
             }
 
+            $this->activities->record('sale_created_paid', 'sale', $transaction->id, $recordedBy->id);
+
             return $transaction->load('items.product');
         });
     }
@@ -110,7 +114,7 @@ class SalesTransactionService
     private function generateTransactionNumber(): string
     {
         do {
-            $transactionNumber = 'WM' . now()->format('ymdHis') . Str::upper(Str::random(3));
+            $transactionNumber = 'WM'.now()->format('ymdHis').Str::upper(Str::random(3));
         } while (SalesTransaction::where('transaction_no', $transactionNumber)->exists());
 
         return $transactionNumber;

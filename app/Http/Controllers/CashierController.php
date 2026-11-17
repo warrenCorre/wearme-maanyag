@@ -3,15 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\StoreActivityRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class CashierController extends Controller
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     public function index(): View
     {
         $cashiers = User::where('role', 'cashier')
@@ -36,12 +40,15 @@ class CashierController extends Controller
     {
         $validated = $this->validateCashier($request);
 
-        User::create([
-            ...$validated,
-            'role' => 'cashier',
-            'status' => 'active',
-            'profile_image' => 'default-profile.png',
-        ]);
+        DB::transaction(function () use ($validated): void {
+            $cashier = User::create([
+                ...$validated,
+                'role' => 'cashier',
+                'status' => 'active',
+                'profile_image' => 'default-profile.png',
+            ]);
+            $this->activities->record('cashier_created', 'cashier', $cashier->id, (int) Auth::id());
+        });
 
         return redirect()->route('cashiers.index')
             ->with('status', 'Cashier account created successfully.');
@@ -70,7 +77,12 @@ class CashierController extends Controller
             unset($validated['password']);
         }
 
-        $cashier->update($validated);
+        DB::transaction(function () use ($cashier, $validated): void {
+            $cashier->update($validated);
+            if ($cashier->wasChanged(['name', 'email', 'phone', 'address', 'password'])) {
+                $this->activities->record('cashier_updated', 'cashier', $cashier->id, (int) Auth::id());
+            }
+        });
 
         return redirect()->route('cashiers.index')
             ->with('status', 'Cashier account updated successfully.');
@@ -92,7 +104,10 @@ class CashierController extends Controller
 
         $newStatus = $cashier->status === 'active' ? 'inactive' : 'active';
 
-        $cashier->update(['status' => $newStatus]);
+        DB::transaction(function () use ($cashier, $newStatus): void {
+            $cashier->update(['status' => $newStatus]);
+            $this->activities->record('cashier_status_changed', 'cashier', $cashier->id, (int) Auth::id());
+        });
 
         return redirect()->route('cashiers.index')
             ->with('status', "Cashier account {$newStatus}.");
@@ -112,7 +127,10 @@ class CashierController extends Controller
             ]);
         }
 
-        $cashier->delete();
+        DB::transaction(function () use ($cashier): void {
+            $cashier->delete();
+            $this->activities->record('cashier_deleted', 'cashier', $cashier->id, (int) Auth::id());
+        });
 
         return redirect()->route('cashiers.index')
             ->with('status', 'Cashier account deleted.');

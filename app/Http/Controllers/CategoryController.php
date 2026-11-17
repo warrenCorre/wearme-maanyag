@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Services\StoreActivityRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class CategoryController extends Controller
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     public function index(): View
     {
         $categories = Category::withCount('products')
@@ -25,10 +29,13 @@ class CategoryController extends Controller
             'category_name' => ['required', 'string', 'max:100', 'unique:tbl_categories,category_name'],
         ]);
 
-        Category::create([
-            'category_name' => $validated['category_name'],
-            'status' => 'active',
-        ]);
+        DB::transaction(function () use ($validated): void {
+            $category = Category::create([
+                'category_name' => $validated['category_name'],
+                'status' => 'active',
+            ]);
+            $this->activities->record('category_created', 'category', $category->id, (int) auth()->id());
+        });
 
         return redirect()->route('categories.index')
             ->with('status', 'Category created successfully.');
@@ -46,7 +53,12 @@ class CategoryController extends Controller
             'status' => ['required', Rule::in(['active', 'inactive'])],
         ]);
 
-        $category->update($validated);
+        DB::transaction(function () use ($category, $validated): void {
+            $category->update($validated);
+            if ($category->wasChanged(['category_name', 'status'])) {
+                $this->activities->record('category_updated', 'category', $category->id, (int) auth()->id());
+            }
+        });
 
         return redirect()->route('categories.index')
             ->with('status', 'Category updated successfully.');
@@ -54,9 +66,12 @@ class CategoryController extends Controller
 
     public function toggleStatus(Category $category): RedirectResponse
     {
-        $category->update([
-            'status' => $category->status === 'active' ? 'inactive' : 'active',
-        ]);
+        DB::transaction(function () use ($category): void {
+            $category->update([
+                'status' => $category->status === 'active' ? 'inactive' : 'active',
+            ]);
+            $this->activities->record('category_status_changed', 'category', $category->id, (int) auth()->id());
+        });
 
         return redirect()->route('categories.index')
             ->with('status', 'Category status updated successfully.');

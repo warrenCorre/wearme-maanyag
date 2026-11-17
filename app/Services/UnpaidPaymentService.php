@@ -12,6 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class UnpaidPaymentService
 {
+    public function __construct(private StoreActivityRecorder $activities) {}
+
     public function recordPendingItems(array $data, User $updatedBy): SalesTransaction
     {
         return DB::transaction(function () use ($data, $updatedBy) {
@@ -26,7 +28,7 @@ class UnpaidPaymentService
                     ->lockForUpdate()
                     ->first();
 
-                if (!$product) {
+                if (! $product) {
                     throw ValidationException::withMessages([
                         'products' => 'One of the selected products is no longer available.',
                     ]);
@@ -102,6 +104,11 @@ class UnpaidPaymentService
                 'updated_by' => $updatedBy->id,
             ]);
 
+            $this->activities->record('sale_created_unpaid', 'sale', $transaction->id, $updatedBy->id);
+            if ($amountPaidCents > 0) {
+                $this->activities->record('payment_partial', 'sale', $transaction->id, $updatedBy->id);
+            }
+
             return $transaction->load([
                 'items.product',
                 'user',
@@ -144,7 +151,7 @@ class UnpaidPaymentService
                     ->lockForUpdate()
                     ->first();
 
-                if (!$product) {
+                if (! $product) {
                     throw ValidationException::withMessages([
                         'products' => 'One of the selected products is no longer available.',
                     ]);
@@ -176,6 +183,7 @@ class UnpaidPaymentService
 
             $totalCents = $this->toCents($transaction->items()->sum('subtotal'));
             $amountPaidCents = $this->toCents($data['amount_paid']);
+            $previousPaidCents = $this->toCents($payment->amount_paid);
 
             if ($amountPaidCents < $this->toCents($payment->amount_paid) || $amountPaidCents > $totalCents) {
                 throw ValidationException::withMessages([
@@ -201,6 +209,15 @@ class UnpaidPaymentService
                     ? 'paid'
                     : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
             ]);
+
+            if ($newProductRows !== [] || $transaction->wasChanged([
+                'customer_name', 'customer_contact', 'delivery_address', 'total_amount',
+            ])) {
+                $this->activities->record('sale_updated', 'sale', $transaction->id, $updatedBy->id);
+            }
+            if ($amountPaidCents > $previousPaidCents) {
+                $this->activities->record($settled ? 'payment_settled' : 'payment_partial', 'sale', $transaction->id, $updatedBy->id);
+            }
 
             return $transaction->fresh([
                 'items.product',
@@ -264,6 +281,10 @@ class UnpaidPaymentService
                     : ($amountPaidCents > 0 ? 'partially_paid' : 'unpaid'),
             ]);
 
+            if ($amountPaidCents > $currentPaidCents) {
+                $this->activities->record($settled ? 'payment_settled' : 'payment_partial', 'sale', $transaction->id, $updatedBy->id);
+            }
+
             return $payment->load(['salesTransaction', 'updatedBy']);
         });
     }
@@ -282,7 +303,7 @@ class UnpaidPaymentService
     private function generateTransactionNumber(): string
     {
         do {
-            $transactionNumber = 'WM' . now()->format('ymdHis') . Str::upper(Str::random(3));
+            $transactionNumber = 'WM'.now()->format('ymdHis').Str::upper(Str::random(3));
         } while (SalesTransaction::where('transaction_no', $transactionNumber)->exists());
 
         return $transactionNumber;

@@ -38,6 +38,8 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.sources.0.as_of', '2026-11-17')
             ->assertSee('Recorded store activity for November 17, 2026')
             ->assertSee('Sales recorded: 0')
+            ->assertSee('Other tracked changes: none')
+            ->assertSee('Scheduled product collection dates today: 0')
             ->assertJsonMissingPath('result.visit_context');
         Http::assertNothingSent();
     }

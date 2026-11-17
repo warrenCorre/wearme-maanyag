@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Auth\Events\PasswordReset;
 use App\Models\User;
+use App\Services\StoreActivityRecorder;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,6 +17,7 @@ use Illuminate\Validation\Rules\Password as PasswordRule;
 class AuthController extends Controller
 {
     private const MAX_LOGIN_ATTEMPTS = 5;
+
     private const LOGIN_LOCKOUT_SECONDS = 60;
 
     public function showLoginForm()
@@ -56,7 +59,7 @@ class AuthController extends Controller
         ]);
     }
 
-    public function resetPassword(Request $request)
+    public function resetPassword(Request $request, StoreActivityRecorder $activities)
     {
         $validated = $request->validate([
             'token' => ['required'],
@@ -66,10 +69,13 @@ class AuthController extends Controller
 
         $status = Password::reset(
             $validated,
-            function (User $user, string $password) {
-                $user->forceFill([
-                    'password' => Hash::make($password),
-                ])->save();
+            function (User $user, string $password) use ($activities): void {
+                DB::transaction(function () use ($user, $password, $activities): void {
+                    $user->forceFill([
+                        'password' => Hash::make($password),
+                    ])->save();
+                    $activities->record('password_reset', 'user', $user->id, $user->id);
+                });
 
                 event(new PasswordReset($user));
             }
@@ -95,7 +101,7 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
-        $throttleKey = Str::lower($credentials['email']) . '|' . $request->ip();
+        $throttleKey = Str::lower($credentials['email']).'|'.$request->ip();
 
         if (RateLimiter::tooManyAttempts($throttleKey, self::MAX_LOGIN_ATTEMPTS)) {
             $seconds = RateLimiter::availableIn($throttleKey);
@@ -107,7 +113,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $credentials['email'])->first();
 
-        if (!$user) {
+        if (! $user) {
             RateLimiter::hit($throttleKey, self::LOGIN_LOCKOUT_SECONDS);
 
             return back()->withErrors([
@@ -123,7 +129,7 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
-        if (!Hash::check($credentials['password'], $user->password)) {
+        if (! Hash::check($credentials['password'], $user->password)) {
             RateLimiter::hit($throttleKey, self::LOGIN_LOCKOUT_SECONDS);
 
             return back()->withErrors([

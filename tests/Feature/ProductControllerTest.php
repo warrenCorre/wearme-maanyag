@@ -70,6 +70,10 @@ class ProductControllerTest extends TestCase
             'product_code' => 'SYN-001',
         ]);
         $this->assertSame('2026-10-15', Product::query()->firstOrFail()->collection_date->toDateString());
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'product_created', 'subject_type' => 'product',
+            'subject_id' => Product::query()->firstOrFail()->id, 'actor_id' => $owner->id,
+        ]);
     }
 
     public function test_owner_cannot_create_a_product_without_a_collection_date(): void
@@ -135,6 +139,9 @@ class ProductControllerTest extends TestCase
 
         $response->assertRedirect(route('products.index'));
         $this->assertSame('2026-10-15', $product->fresh()->collection_date->toDateString());
+        $this->assertDatabaseHas('tbl_store_activity_events', [
+            'event_type' => 'product_updated', 'subject_id' => $product->id, 'actor_id' => $owner->id,
+        ]);
     }
 
     public function test_owner_cannot_change_stock_through_the_product_edit_form(): void
@@ -171,6 +178,7 @@ class ProductControllerTest extends TestCase
 
         $this->assertSame(5, $product->fresh()->quantity);
         $this->assertDatabaseCount('tbl_inventory_adjustments', 0);
+        $this->assertDatabaseCount('tbl_store_activity_events', 0);
 
         $payload['quantity'] = '';
         $this->actingAs($owner)
@@ -207,6 +215,29 @@ class ProductControllerTest extends TestCase
         $this->assertDatabaseHas('tbl_products', ['id' => $product->id, 'status' => 'archived']);
         $this->assertDatabaseCount('tbl_sales_transaction_items', 1);
         $this->assertDatabaseCount('tbl_unpaid_payments', 1);
+        $this->assertDatabaseCount('tbl_store_activity_events', 0);
+    }
+
+    public function test_archive_restore_and_permanent_removal_leave_anonymous_activity(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-05 12:00:00'));
+        Storage::fake('public');
+        $owner = $this->createOwner();
+        $category = Category::query()->create(['category_name' => 'Pants', 'status' => 'active']);
+        $this->actingAs($owner)->post(route('products.store'), $this->productPayload($category, '2026-10-15'))
+            ->assertRedirect(route('products.index'));
+        $product = Product::query()->firstOrFail();
+
+        $this->actingAs($owner)->patch(route('products.archive', $product))->assertRedirect(route('products.index'));
+        $this->actingAs($owner)->patch(route('products.restore', $product->id))->assertRedirect(route('products.archive.index'));
+        $this->actingAs($owner)->patch(route('products.archive', $product))->assertRedirect(route('products.index'));
+        $this->actingAs($owner)->delete(route('products.permanent', $product->id))->assertRedirect(route('products.archive.index'));
+
+        $this->assertDatabaseMissing('tbl_products', ['id' => $product->id]);
+        $this->assertDatabaseHas('tbl_store_activity_events', ['event_type' => 'product_archived', 'subject_id' => $product->id]);
+        $this->assertDatabaseHas('tbl_store_activity_events', ['event_type' => 'product_restored', 'subject_id' => $product->id]);
+        $this->assertDatabaseHas('tbl_store_activity_events', ['event_type' => 'product_deleted', 'subject_id' => $product->id]);
+        $this->assertDatabaseCount('tbl_store_activity_events', 5);
     }
 
     private function createOwner(): User
