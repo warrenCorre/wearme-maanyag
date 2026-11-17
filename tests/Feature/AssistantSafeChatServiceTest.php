@@ -65,13 +65,16 @@ class AssistantSafeChatServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_chat_generation_failure_offers_an_action_the_owner_can_use_without_gemini(): void
+    public function test_chat_generation_failure_reports_temporary_unavailability(): void
     {
         config(['services.gemini.allow_conversation' => true]);
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
 
-        $this->assertSame('Chat replies are limited right now. You can try a direct store question such as Summarize inventory status.', $this->service($client)->reply('Uhmm, nothing really'));
+        $this->assertSame([
+            'status' => 'unavailable',
+            'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
+        ], $this->service($client)->replyWithStatus('Uhmm, nothing really'));
         Http::assertNothingSent();
     }
 
@@ -211,7 +214,10 @@ class AssistantSafeChatServiceTest extends TestCase
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->twice()->andReturn($output);
 
-            $this->assertStringContainsString('thrift joke', $this->service($client)->reply('tell me a joke about thrift shopping'), $output);
+            $this->assertSame([
+                'status' => 'unavailable',
+                'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
+            ], $this->service($client)->replyWithStatus('tell me a joke about thrift shopping'), $output);
         }
     }
 
@@ -229,13 +235,13 @@ class AssistantSafeChatServiceTest extends TestCase
         $this->assertSame('I am glad to keep chatting with you.', $this->service($client)->reply('hey'));
     }
 
-    public function test_provider_failure_uses_the_local_reply(): void
+    public function test_provider_failure_does_not_appear_as_a_successful_local_reply(): void
     {
         config(['services.gemini.allow_conversation' => true]);
         $client = Mockery::mock(GeminiClient::class);
         $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Synthetic timeout'));
 
-        $this->assertStringContainsString('another chapter', $this->service($client)->reply('can we chat about reusing clothes'));
+        $this->assertSame('unavailable', $this->service($client)->replyWithStatus('can we chat about reusing clothes')['status']);
     }
 
     private function service(GeminiClient $client): AssistantSafeChatService

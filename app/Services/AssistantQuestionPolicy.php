@@ -37,6 +37,10 @@ class AssistantQuestionPolicy
 
         $normalizedQuestion = $this->withoutSocialOpening($normalizedQuestion);
 
+        if ($normalizedQuestion === 'summarize recorded store activity today') {
+            return $this->allowed('current_activity', null, $date, 'Summarize recorded store activity today in Philippine time.');
+        }
+
         $pending = $visitContext['pending'] ?? null;
 
         if ($pending === 'latest_pending_sale_confirmation') {
@@ -249,7 +253,7 @@ class AssistantQuestionPolicy
         }
 
         if ($visitContext !== null && in_array($visitContext['intent'] ?? null, [
-            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary',
+            'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'current_activity',
         ], true)) {
             $followUp = preg_replace('/^(?:(?:(?:and|also|then)\s+)?(?:what|how)\s+about|(?:and|also|then))(?:\s+the)?\s+/', '', $normalizedQuestion) ?? '';
 
@@ -264,6 +268,7 @@ class AssistantQuestionPolicy
                     'best sellers', 'best selling products' => 'List best-selling products',
                     'collection dates', 'recently collected products' => 'List recently collected products',
                     'unpaid balance', 'outstanding balance' => 'What is the total unpaid balance?',
+                    'activity', 'store activity' => 'Summarize recorded store activity today',
                     'today', 'yesterday', 'this week', 'this month', 'this year', 'last week', 'last month', 'last year' => $visitContext['intent'] === 'sales_summary'
                         ? 'Show me sales for '.$followUp : null,
                     default => null,

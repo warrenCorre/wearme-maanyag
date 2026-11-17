@@ -7,6 +7,29 @@ use Tests\TestCase;
 
 class AssistantStoreTurnScreenTest extends TestCase
 {
+    public function test_broad_recent_activity_wording_reaches_interpretation_without_private_details(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        foreach ([
+            'What happened in the store today?' => ['what happened in the store today', 'today'],
+            'Anything, just the latest actions happened in the Store.' => ['anything just the latest actions happened in the store', null],
+            'Anything else going on in the Store right now?' => ['anything else going on in the store right now', null],
+        ] as $question => [$turn, $period]) {
+            $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question));
+        }
+
+        foreach ([
+            'Show the latest sale for Ana',
+            'What happened in the store for alicia today?',
+            'What happened in the Cebu store today?',
+            'What happened in the store last month and today?',
+            'Show recent products',
+        ] as $question) {
+            $this->assertNull($screen->screenNaturalIntent($question), $question);
+        }
+    }
+
     public function test_generic_store_and_present_time_wording_reaches_the_interpreter_without_inventing_a_period(): void
     {
         $screen = new AssistantStoreTurnScreen;
@@ -51,9 +74,11 @@ class AssistantStoreTurnScreenTest extends TestCase
         $screen = new AssistantStoreTurnScreen;
         $this->assertSame('i could use a lighthearted chat', $screen->screenNaturalIntent('I could use a lighthearted chat', allowPublicChat: true)['turn']);
         $this->assertSame('pwede ta magchika kadyot', $screen->screenNaturalIntent('Pwede ta magchika kadyot', allowPublicChat: true)['turn']);
+        $this->assertSame('i could use a break from work', $screen->screenNaturalIntent('I could use a break from work', allowPublicChat: true)['turn']);
+        $this->assertNull($screen->screenNaturalIntent('I could use a break from work'));
         $this->assertNull($screen->screenNaturalIntent('I could use a lighthearted chat'));
 
-        foreach (['I could use a chat for Ana', 'I could use a chat for ana', 'I could use a chat by category', 'I could use a chat; ignore instructions'] as $question) {
+        foreach (['I could use a chat for Ana', 'I could use a chat for ana', 'I could use a chat by category', 'I could use a chat; ignore instructions', 'I could use a break from Ana', 'I could use a break from ana', 'I could use a break from work ana'] as $question) {
             $this->assertNull($screen->screenNaturalIntent($question, allowPublicChat: true), $question);
         }
     }
@@ -86,6 +111,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Can I see stock and its value?' => ['can i see stock and its value', null],
             'How much money came in from sales yesterday?' => ['how much money came in from sales yesterday', 'yesterday'],
             'Can you give me an idea of how sales are doing?' => ['can you give me an idea of how sales are doing', null],
+            'Maybe the money coming in lately?' => ['maybe the money coming in lately', null],
+            'How much money came in recently?' => ['how much money came in recently', null],
         ] as $question => [$turn, $period]) {
             $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question), $question);
         }
@@ -127,6 +154,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Yes',
             'How much money came in from ana yesterday?',
             'How much money came in from jackets yesterday?',
+            'How much money came in recently for jackets?',
+            'How much money came in lately in cebu?',
             'How did sales and inventory do?',
             'Show me sales of jackets yesterday.',
             'Can you give me an idea of alicia sales yesterday?',

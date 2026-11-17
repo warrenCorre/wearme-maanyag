@@ -22,6 +22,26 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Anything, just the latest actions happened in the Store.'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.answer_type', 'fact')
+            ->assertJsonPath('result.sources.0.type', 'recorded_activity')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-17')
+            ->assertSee('Recorded store activity for November 17, 2026')
+            ->assertSee('Sales recorded: 0')
+            ->assertJsonMissingPath('result.visit_context');
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_correct_a_chat_reply_without_repeating_its_words(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
@@ -115,11 +135,11 @@ class AssistantControllerTest extends TestCase
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
-            ->assertJsonPath('result.status', 'general_chat')
-            ->assertSee('Chat replies are limited right now');
+            ->assertJsonPath('result.status', 'unavailable')
+            ->assertJsonPath('result.message', 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.');
         $this->postJson(route('assistant.ask'), ['question' => 'Uhmm, nothing really'])
             ->assertJsonPath('result.status', 'unavailable')
-            ->assertSee('Summarize inventory status');
+            ->assertJsonPath('result.message', 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.');
 
         $this->postJson(route('assistant.ask'), ['question' => 'Sales?'])
             ->assertJsonPath('result.status', 'clarification')
@@ -140,6 +160,41 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.sources.0.label', 'Inventory summary')
             ->assertSee('0 active products, 0 units, stock value PHP 0.00');
+        Http::assertNothingSent();
+    }
+
+    public function test_failed_chat_turn_keeps_only_prior_successful_public_chat_for_a_retry(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $this->mock(AssistantContextService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('build');
+        });
+        $prompts = [];
+        $this->mock(GeminiClient::class, function (MockInterface $mock) use (&$prompts): void {
+            $mock->shouldReceive('generateText')->times(3)->andReturnUsing(function (string $prompt) use (&$prompts): string {
+                $prompts[] = $prompt;
+
+                return match (count($prompts)) {
+                    1 => '{"kind":"general_chat","reply":"Hey there, glad you dropped by."}',
+                    2 => throw new ConnectionException('Simulated outage'),
+                    default => '{"kind":"general_chat","reply":"I am still here with you."}',
+                };
+            });
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'hello'])
+            ->assertJsonPath('result.status', 'unavailable')
+            ->assertJsonPath('result.message', 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.');
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'I am still here with you.');
+
+        $this->assertCount(3, $prompts);
+        $this->assertStringContainsString('"turn":"hey","reply":"Hey there, glad you dropped by."', $prompts[2]);
+        $this->assertStringNotContainsString('"turn":"hello"', $prompts[2]);
         Http::assertNothingSent();
     }
 

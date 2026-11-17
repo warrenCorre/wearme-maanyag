@@ -14,7 +14,7 @@
 
     <section class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
-            <p class="text-sm font-black uppercase tracking-wide text-rose-500">Today's Sales</p>
+            <p class="text-sm font-black uppercase tracking-wide text-rose-500">Today's Sales · Philippine time</p>
             <p class="mt-3 text-3xl font-black tabular-nums">{{ Number::currency($salesStats['today_total'], 'PHP') }}</p>
             <p class="mt-2 text-sm font-medium text-slate-500">{{ $salesStats['today_count'] }} transaction{{ $salesStats['today_count'] === 1 ? '' : 's' }} today</p>
         </div>
@@ -41,7 +41,7 @@
 
     <section class="mt-8 grid gap-5 lg:grid-cols-2">
         <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-[5px_5px_0_0_#0f172a]">
-            <p class="text-sm font-black uppercase tracking-wide text-rose-500">Sales - Last 7 Days</p>
+            <p class="text-sm font-black uppercase tracking-wide text-rose-500">Sales - Last 7 Days · Philippine time</p>
             <div class="mt-4 h-72">
                 <canvas id="salesTrendChart" aria-label="Sales trend for the last seven days" role="img"></canvas>
             </div>

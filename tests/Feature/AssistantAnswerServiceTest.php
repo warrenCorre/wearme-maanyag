@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
+use App\Services\AssistantCurrentActivityService;
 use App\Services\AssistantDamagedAdjustmentService;
 use App\Services\AssistantLatestUnpaidSaleService;
 use App\Services\AssistantModelIntentService;
@@ -26,6 +27,86 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_ordinary_personal_chat_reaches_gemini_without_store_context(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+
+        foreach ([
+            ['My day has been slow, can we just chat?', 'my day has been slow can we just chat'],
+            ['I could use a break from work.', 'i could use a break from work'],
+        ] as [$question, $screenedTurn]) {
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldNotReceive('build');
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: '.$screenedTurn
+                    && str_contains($instruction, 'general_chat'))
+                ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened general-chat turn: '.$screenedTurn
+                    && str_contains($instruction, 'natural, brief social reply'))
+                ->andReturn('{"kind":"general_chat","reply":"I hear you. We can take a moment to chat."}');
+
+            $result = $this->makeAnswerService($contextService, $client)->answer($question);
+
+            $this->assertSame('general_chat', $result['status'], $question);
+            $this->assertSame('I hear you. We can take a moment to chat.', $result['message'], $question);
+            $this->assertSame($screenedTurn, $result['visit_context']['chat_history'][0]['turn'], $question);
+            $this->assertArrayNotHasKey('sources', $result, $question);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_free_form_chat_follow_up_uses_gemini_and_keeps_only_screened_public_history(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: honestly i just want to talk for a while'
+                && str_contains($instruction, 'general_chat'))
+            ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => str_contains($prompt, '"turn":"hey","reply":"Happy to chat."')
+                && str_ends_with($prompt, 'Current screened general-chat turn: honestly i just want to talk for a while')
+                && str_contains($instruction, 'natural, brief social reply'))
+            ->andReturn('{"kind":"general_chat","reply":"I am here with you. What is on your mind?"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Honestly, I just want to talk for a while.',
+            CarbonImmutable::parse('2026-11-17'),
+            ['chat_history' => [['turn' => 'hey', 'reply' => 'Happy to chat.']]],
+        );
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('I am here with you. What is on your mind?', $result['message']);
+        $this->assertSame([
+            ['turn' => 'hey', 'reply' => 'Happy to chat.'],
+            ['turn' => 'honestly i just want to talk for a while', 'reply' => 'I am here with you. What is on your mind?'],
+        ], $result['visit_context']['chat_history']);
+        Http::assertNothingSent();
+    }
+
+    public function test_current_activity_still_requires_the_existing_store_sharing_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Summarize recorded store activity today',
+            CarbonImmutable::parse('2026-11-17 09:00:00', 'Asia/Manila'),
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
     public function test_failed_interpretation_of_a_new_casual_turn_is_honestly_unavailable_without_store_access(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -36,7 +117,7 @@ class AssistantAnswerServiceTest extends TestCase
 
         $this->assertSame([
             'status' => 'unavailable',
-            'message' => "I couldn't interpret that message right now. You can try a greeting or ask directly, for example: Show me sales for this month, Summarize inventory status, or List low-stock products.",
+            'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
         ], $this->makeAnswerService($context, $client)->answer('Uhmm, nothing really'));
         Http::assertNothingSent();
     }
@@ -1319,6 +1400,7 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
             new AssistantVerifiedFallback,
+            new AssistantCurrentActivityService,
         );
     }
 }
