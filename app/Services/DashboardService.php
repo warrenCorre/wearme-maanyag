@@ -12,22 +12,39 @@ class DashboardService
 {
     public function salesStats(): array
     {
-        $today = CarbonImmutable::today();
+        $today = CarbonImmutable::today('Asia/Manila');
+        $days = collect(range(6, 0))
+            ->map(fn (int $daysAgo): CarbonImmutable => $today->subDays($daysAgo));
+        $query = SalesTransaction::query()->toBase();
 
-        $todayTotal = (float) SalesTransaction::query()
-            ->whereDate('transaction_date', $today)
-            ->sum('total_amount');
+        foreach ($days as $index => $day) {
+            $start = $day->utc()->format('Y-m-d H:i:s');
+            $end = $day->addDay()->utc()->format('Y-m-d H:i:s');
 
-        $todayCount = SalesTransaction::query()
-            ->whereDate('transaction_date', $today)
-            ->count();
+            $query->selectRaw(
+                "COALESCE(SUM(CASE WHEN transaction_date >= ? AND transaction_date < ? THEN total_amount ELSE 0 END), 0) as day_{$index}_total",
+                [$start, $end],
+            );
+        }
+
+        $todayStart = $today->utc()->format('Y-m-d H:i:s');
+        $todayEnd = $today->addDay()->utc()->format('Y-m-d H:i:s');
+        $stats = $query
+            ->selectRaw('COUNT(CASE WHEN transaction_date >= ? AND transaction_date < ? THEN 1 END) as today_count', [$todayStart, $todayEnd])
+            ->where('transaction_date', '>=', $days->first()->utc()->format('Y-m-d H:i:s'))
+            ->where('transaction_date', '<', $todayEnd)
+            ->first();
+        $totals = $days
+            ->keys()
+            ->map(fn (int $index): float => (float) $stats->{"day_{$index}_total"})
+            ->all();
 
         return [
-            'today_total' => $todayTotal,
-            'today_count' => $todayCount,
+            'today_total' => $totals[6],
+            'today_count' => (int) $stats->today_count,
             'last_seven_days' => [
-                'labels' => $this->lastSevenDaysLabels(),
-                'totals' => $this->lastSevenDaysTotals(),
+                'labels' => $days->map(fn (CarbonImmutable $day): string => $day->format('M d'))->all(),
+                'totals' => $totals,
             ],
         ];
     }
@@ -86,28 +103,5 @@ class DashboardService
             'outstanding_balance' => (float) $stats->outstanding_balance,
             'recent' => $recent,
         ];
-    }
-
-    private function lastSevenDaysLabels(): array
-    {
-        return collect(range(6, 0))->map(function (int $daysAgo) {
-            return CarbonImmutable::today()->subDays($daysAgo)->format('M d');
-        })->all();
-    }
-
-    private function lastSevenDaysTotals(): array
-    {
-        $rows = SalesTransaction::query()
-            ->whereDate('transaction_date', '>=', CarbonImmutable::today()->subDays(6))
-            ->selectRaw('DATE(transaction_date) as sale_day')
-            ->selectRaw('SUM(total_amount) as day_total')
-            ->groupBy('sale_day')
-            ->pluck('day_total', 'sale_day');
-
-        return collect(range(6, 0))->map(function (int $daysAgo) use ($rows) {
-            $day = CarbonImmutable::today()->subDays($daysAgo)->toDateString();
-
-            return (float) ($rows[$day] ?? 0);
-        })->all();
     }
 }
