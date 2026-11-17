@@ -109,6 +109,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Can I see stock and its value?' => ['can i see stock and its value', null],
             'How much money came in from sales yesterday?' => ['how much money came in from sales yesterday', 'yesterday'],
             'Can you give me an idea of how sales are doing?' => ['can you give me an idea of how sales are doing', null],
+            'Maybe the money coming in lately?' => ['maybe the money coming in lately', null],
+            'How much money came in recently?' => ['how much money came in recently', null],
         ] as $question => [$turn, $period]) {
             $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question), $question);
         }
@@ -150,6 +152,8 @@ class AssistantStoreTurnScreenTest extends TestCase
             'Yes',
             'How much money came in from ana yesterday?',
             'How much money came in from jackets yesterday?',
+            'How much money came in recently for jackets?',
+            'How much money came in lately in cebu?',
             'How did sales and inventory do?',
             'Show me sales of jackets yesterday.',
             'Can you give me an idea of alicia sales yesterday?',

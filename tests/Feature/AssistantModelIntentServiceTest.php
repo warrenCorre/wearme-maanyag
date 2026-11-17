@@ -120,7 +120,13 @@ class AssistantModelIntentServiceTest extends TestCase
     {
         config(['services.gemini.allow_conversation' => true]);
 
-        foreach (['Uhmm, nothing really', 'I could use a lighthearted chat', 'Pwede ta magchika kadyot'] as $question) {
+        foreach ([
+            'Uhmm, nothing really',
+            'I could use a lighthearted chat',
+            'Pwede ta magchika kadyot',
+            'Honestly, I just want to talk for a while.',
+            'Can we go back to chatting for a bit?',
+        ] as $question) {
             $client = Mockery::mock(GeminiClient::class);
             $client->shouldReceive('generateText')->once()
                 ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => str_starts_with($prompt, 'Current screened store turn: ')
@@ -177,6 +183,22 @@ class AssistantModelIntentServiceTest extends TestCase
             $this->assertSame(['question' => $expected, 'period' => null], $this->service($client)->interpret($question, null, $goal));
         }
 
+        Http::assertNothingSent();
+    }
+
+    public function test_vague_sales_timing_after_a_store_clarification_asks_for_a_period(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: maybe the money coming in lately'
+                && str_contains($instruction, 'sales_period'))
+            ->andReturn('{"intent":"sales_period","period":"none","scope":"overall"}');
+
+        $this->assertSame(
+            ['question' => 'How many transactions?', 'period' => null],
+            $this->service($client)->interpret('Maybe the money coming in lately?'),
+        );
         Http::assertNothingSent();
     }
 

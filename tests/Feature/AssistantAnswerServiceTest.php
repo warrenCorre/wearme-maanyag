@@ -27,6 +27,37 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_free_form_chat_follow_up_uses_gemini_and_keeps_only_screened_public_history(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: honestly i just want to talk for a while'
+                && str_contains($instruction, 'general_chat'))
+            ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt, string $instruction): bool => str_contains($prompt, '"turn":"hey","reply":"Happy to chat."')
+                && str_ends_with($prompt, 'Current screened general-chat turn: honestly i just want to talk for a while')
+                && str_contains($instruction, 'natural, brief social reply'))
+            ->andReturn('{"kind":"general_chat","reply":"I am here with you. What is on your mind?"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Honestly, I just want to talk for a while.',
+            CarbonImmutable::parse('2026-11-17'),
+            ['chat_history' => [['turn' => 'hey', 'reply' => 'Happy to chat.']]],
+        );
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('I am here with you. What is on your mind?', $result['message']);
+        $this->assertSame([
+            ['turn' => 'hey', 'reply' => 'Happy to chat.'],
+            ['turn' => 'honestly i just want to talk for a while', 'reply' => 'I am here with you. What is on your mind?'],
+        ], $result['visit_context']['chat_history']);
+        Http::assertNothingSent();
+    }
+
     public function test_current_activity_still_requires_the_existing_store_sharing_gate(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

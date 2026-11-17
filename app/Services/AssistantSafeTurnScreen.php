@@ -52,7 +52,7 @@ class AssistantSafeTurnScreen
 
         if ($screened === null
             || $storeTurnScreen->screenSalesFollowUp($question) !== null
-            || preg_match('/\b(?:sales?|transactions?|inventory|stock|products?|items?|balances?|unpaid|pending|payments?|revenue|profit|prices?|collections?|collected|sellers?|totals?|counts?|records?|reports?|halin|baligya|utang|nabayran|my|medical|health|diagnosed|politics|president|capital|news|forecast)\b/', $screened['turn']) === 1
+            || preg_match('/\b(?:sales?|transactions?|inventory|stock|products?|items?|balances?|unpaid|pending|payments?|revenue|profit|prices?|collections?|collected|sellers?|totals?|counts?|records?|reports?|shop|store|business|money|activity|happened|halin|baligya|utang|nabayran|my|medical|health|diagnosed|politics|president|capital|news|forecast)\b/', $screened['turn']) === 1
             || preg_match('/\A(?:what|who|when|where) (?:is|are)\b/', $screened['turn']) === 1) {
             return null;
         }
