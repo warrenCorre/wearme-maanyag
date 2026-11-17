@@ -117,7 +117,7 @@ class AssistantAnswerServiceTest extends TestCase
 
         $this->assertSame([
             'status' => 'unavailable',
-            'message' => "I couldn't interpret that message right now. You can try a greeting or ask directly, for example: Show me sales for this month, Summarize inventory status, or List low-stock products.",
+            'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
         ], $this->makeAnswerService($context, $client)->answer('Uhmm, nothing really'));
         Http::assertNothingSent();
     }

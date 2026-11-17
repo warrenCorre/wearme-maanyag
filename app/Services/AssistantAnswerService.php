@@ -119,6 +119,14 @@ class AssistantAnswerService
                     return $this->clarify($pendingGoal ?? 'store_goal', $pendingPeriod);
                 }
 
+                if ($screened === null && config('services.gemini.allow_conversation', false)
+                    && $this->safeChatService->screenedTurn($question) !== null) {
+                    return [
+                        'status' => 'unavailable',
+                        'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
+                    ];
+                }
+
                 return [
                     'status' => 'unavailable',
                     'message' => "I couldn't interpret that message right now. You can try a greeting or ask directly, for example: Show me sales for this month, Summarize inventory status, or List low-stock products.",
@@ -177,7 +185,13 @@ class AssistantAnswerService
 
             $turn = $decision['chat_turn'];
             $storeTopic = is_string($visitContext['store_topic'] ?? null) ? $visitContext['store_topic'] : null;
-            $reply = $this->safeChatService->reply($turn, $history, $storeTopic);
+            $chatResult = $this->safeChatService->replyWithStatus($turn, $history, $storeTopic);
+
+            if ($chatResult['status'] === 'unavailable') {
+                return ['status' => 'unavailable', 'message' => $chatResult['message']];
+            }
+
+            $reply = $chatResult['message'];
 
             if ($conversationEnabled) {
                 $history[] = ['turn' => $turn, 'reply' => $reply];

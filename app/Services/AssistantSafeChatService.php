@@ -13,6 +13,8 @@ class AssistantSafeChatService
 {
     public const MAX_CHAT_EXCHANGES = 40;
 
+    public const TEMPORARY_UNAVAILABLE_MESSAGE = 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.';
+
     private const RESPONSE_SCHEMA = [
         'type' => 'object',
         'properties' => [
@@ -48,12 +50,21 @@ class AssistantSafeChatService
     /** @param  list<array{turn: string, reply: string}>  $history */
     public function reply(string $safeTurn, array $history = [], ?string $storeTopic = null): string
     {
+        return $this->replyWithStatus($safeTurn, $history, $storeTopic)['message'];
+    }
+
+    /**
+     * @param  list<array{turn: string, reply: string}>  $history
+     * @return array{status: 'generated'|'local'|'unavailable', message: string}
+     */
+    public function replyWithStatus(string $safeTurn, array $history = [], ?string $storeTopic = null): array
+    {
         $fallback = $this->fallback($safeTurn);
 
         if (! config('services.gemini.allow_conversation', false)) {
             Log::debug('Assistant chat fallback', ['reason' => 'conversation_disabled']);
 
-            return $fallback;
+            return ['status' => 'local', 'message' => $fallback];
         }
 
         $history = $this->screenedHistory($history);
@@ -65,7 +76,7 @@ class AssistantSafeChatService
         if ($screenedTurn === null) {
             Log::debug('Assistant chat fallback', ['reason' => 'turn_not_screened']);
 
-            return $fallback;
+            return ['status' => 'local', 'message' => $fallback];
         }
 
         $topic = in_array($storeTopic, ['sales', 'unpaid', 'inventory', 'collections', 'other'], true) ? $storeTopic : null;
@@ -94,7 +105,7 @@ class AssistantSafeChatService
                     'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
                 ]);
 
-                return $fallback;
+                return ['status' => 'unavailable', 'message' => self::TEMPORARY_UNAVAILABLE_MESSAGE];
             }
 
             try {
@@ -116,13 +127,13 @@ class AssistantSafeChatService
             $reply = str_replace(['’', '‘', '—', '–', '“', '”'], ["'", "'", '-', '-', "'", "'"], trim($response['reply']));
 
             if ($this->isSafeReply($reply)) {
-                return $reply;
+                return ['status' => 'generated', 'message' => $reply];
             }
 
             Log::warning('Assistant chat fallback', ['reason' => 'reply_not_screened']);
         }
 
-        return $fallback;
+        return ['status' => 'unavailable', 'message' => self::TEMPORARY_UNAVAILABLE_MESSAGE];
     }
 
     /** @return list<array{turn: string, reply: string}> */

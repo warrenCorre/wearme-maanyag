@@ -52,6 +52,8 @@ class AssistantController extends Controller
                 'chat_history' => $result['visit_context']['chat_history'],
                 'store_topic' => null,
             ], now()->addMinutes(20));
+        } elseif ($result['status'] === 'unavailable' && $trustedPublicChat !== null) {
+            $request->session()->cache()->put('assistant.public_chat_history', $trustedPublicChat, now()->addMinutes(20));
         } elseif ($trustedPublicChat !== null || in_array($result['status'], ['answered', 'clarification'], true)) {
             $intent = $result['visit_context']['intent'] ?? null;
             $pending = $result['visit_context']['pending'] ?? null;
@@ -71,7 +73,9 @@ class AssistantController extends Controller
             ], now()->addMinutes(20));
         }
 
-        if ($result['status'] === 'answered' && isset($result['visit_context']['intent'])) {
+        if ($result['status'] === 'unavailable' && $trustedVisitContext !== null) {
+            $request->session()->cache()->put('assistant.visit_context', $trustedVisitContext, now()->addMinutes(20));
+        } elseif ($result['status'] === 'answered' && isset($result['visit_context']['intent'])) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'intent' => $result['visit_context']['intent'],
