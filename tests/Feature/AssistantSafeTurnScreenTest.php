@@ -38,6 +38,9 @@ class AssistantSafeTurnScreenTest extends TestCase
             'Hey Maanyag' => 'hey maanyag',
             'Honestly, I just want to talk for a while.' => 'honestly i just want to talk for a while',
             'Can we go back to chatting for a bit?' => 'can we go back to chatting for a bit',
+            'My day has been slow, can we just chat?' => 'my day has been slow can we just chat',
+            'I could use a break from work.' => 'i could use a break from work',
+            'My mood has been low lately.' => 'my mood has been low lately',
         ] as $question => $expected) {
             $this->assertSame($expected, $screen->screenForModel($question, $storeScreen), $question);
         }
@@ -70,6 +73,10 @@ class AssistantSafeTurnScreenTest extends TestCase
             'Can you tell me sales totals',
             'What is the capital',
             'Tell me something about my jacket',
+            'My account has been locked',
+            'My friend ana needs a chat',
+            'I could use a break from Ana',
+            'I could use a break from ana',
             'How many unpaid transactions are there',
         ] as $question) {
             $this->assertNull($screen->screenForModel($question, $storeScreen), $question);

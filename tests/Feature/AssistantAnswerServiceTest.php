@@ -27,6 +27,37 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_ordinary_personal_chat_reaches_gemini_without_store_context(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+
+        foreach ([
+            ['My day has been slow, can we just chat?', 'my day has been slow can we just chat'],
+            ['I could use a break from work.', 'i could use a break from work'],
+        ] as [$question, $screenedTurn]) {
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldNotReceive('build');
+            $client = Mockery::mock(GeminiClient::class);
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened store turn: '.$screenedTurn
+                    && str_contains($instruction, 'general_chat'))
+                ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+            $client->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt, string $instruction): bool => $prompt === 'Current screened general-chat turn: '.$screenedTurn
+                    && str_contains($instruction, 'natural, brief social reply'))
+                ->andReturn('{"kind":"general_chat","reply":"I hear you. We can take a moment to chat."}');
+
+            $result = $this->makeAnswerService($contextService, $client)->answer($question);
+
+            $this->assertSame('general_chat', $result['status'], $question);
+            $this->assertSame('I hear you. We can take a moment to chat.', $result['message'], $question);
+            $this->assertSame($screenedTurn, $result['visit_context']['chat_history'][0]['turn'], $question);
+            $this->assertArrayNotHasKey('sources', $result, $question);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_free_form_chat_follow_up_uses_gemini_and_keeps_only_screened_public_history(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

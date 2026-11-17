@@ -103,6 +103,7 @@ class AssistantStoreTurnScreen
         $publicChatFrame = $allowPublicChat
             && preg_match('/\b(?:store|shop|business|sales?|transactions?|inventory|stock|products?|items?|unpaid|payments?|balances?|revenue|money|halin|baligya|utang)\b/', $turn) !== 1;
         $publicChatQualifier = $publicChatFrame ? '|a [a-z]{3,}' : '';
+        $publicChatSource = $publicChatFrame ? '|work\z' : '';
         $genericStore = '\b(?:in|at|around|with) (?:the|our|this) (?:store|shop)';
         $timeSuffix = '(?:'.self::CURRENT_TIME_PATTERN.'|(?:(?:for|in|during) )?(?:'.$periodPattern.'))';
         $scopeCheck = preg_replace(
@@ -118,7 +119,7 @@ class AssistantStoreTurnScreen
             || ($recentActivity && ! $overallActivity)
             || preg_match(self::NATURAL_UNSAFE_TERMS, $scopeCheck) === 1
             || preg_match('/\b(?:for|in|during)\s+(?!(?:'.$periodPattern.'|(?:lately|recently)\z|stock|total|from (?:(?:our|the) )?(?:sales|store|shop)'.$publicChatQualifier.')\b)/', $scopeCheck) === 1
-            || preg_match('/\bfrom\s+(?!(?:(?:our|the) )?(?:sales|store|shop)\b)/', $turn) === 1
+            || preg_match('/\bfrom\s+(?!(?:(?:our|the) )?(?:sales|store|shop)\b'.$publicChatSource.')/', $turn) === 1
             || preg_match('/\bof\s+(?!(?:anything|stock|inventory|sales|how|what|whether|(?:our|the) (?:inventory|stock|sales))\b)/', $turn) === 1
             || preg_match('/\b(?:sales|inventory|stock|balances|sellers|collections?|products?|items?) of\b/', $turn) === 1
             || preg_match('/\band (?:what|how|which|pila|unsa)\b/', $turn) === 1
