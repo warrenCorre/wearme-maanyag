@@ -13,6 +13,37 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_varied_aggregate_store_wording_reaches_only_validated_gemini_intents(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how are we doing with sales this month')
+            ->andReturn('{"intent":"sales_summary","period":"this month","scope":"overall"}');
+        $client->shouldReceive('generateText')->once()
+            ->withArgs(fn (string $prompt): bool => $prompt === 'Current screened store turn: how are things for our shop')
+            ->andReturn('{"intent":"store_goal","period":"none","scope":"overall"}');
+        $service = $this->service($client);
+
+        $this->assertSame(['question' => 'Show me sales for this month', 'period' => null], $service->interpret('How are we doing with sales this month?'));
+        $this->assertSame(['question' => null, 'period' => null], $service->interpret('How are things for our shop?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_filtered_or_identifying_store_paraphrases_stay_local_before_gemini(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+        $service = $this->service($client);
+
+        foreach (['How are we doing with jackets this month?', 'How did we do with sales for Ana last month?', 'How are things for our shop in Cebu?'] as $question) {
+            $this->assertNull($service->interpret($question), $question);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_model_can_select_current_activity_only_for_the_whole_store_and_today(): void
     {
         config(['services.gemini.allow_conversation' => true]);

@@ -27,7 +27,7 @@ class AssistantSafeTurnScreen
 
     public function screenBriefFollowUp(string $question, AssistantStoreTurnScreen $storeTurnScreen): ?string
     {
-        if (preg_match('/\A(?:not|too|so|very|quite|really|pretty|dili) +[a-z]{4,32}[.!?]*\z/iD', trim($question)) !== 1) {
+        if (preg_match('/\A(?:(?:not|too|so|very|quite|really|pretty|dili) +[a-z]{4,32}|[a-z]{4,32}(?: +[a-z]{4,32}){1,3})[.!?]*\z/iD', trim($question)) !== 1) {
             return null;
         }
 

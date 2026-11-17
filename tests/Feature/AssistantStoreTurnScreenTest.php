@@ -48,6 +48,28 @@ class AssistantStoreTurnScreenTest extends TestCase
         }
     }
 
+    public function test_aggregate_store_phrasing_can_use_natural_prepositions_without_opening_filters(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        foreach ([
+            'How are we doing with sales this month?' => ['how are we doing with sales this month', 'this month'],
+            'How did we do with our sales last month?' => ['how did we do with our sales last month', 'last month'],
+            'How are things for our shop?' => ['how are things for our shop', null],
+        ] as $question => [$turn, $period]) {
+            $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question), $question);
+        }
+
+        foreach ([
+            'How are we doing with jackets this month?',
+            'How did we do with sales for Ana last month?',
+            'How are things for our shop in Cebu?',
+            'How are we doing with sales and inventory this month?',
+        ] as $question) {
+            $this->assertNull($screen->screenNaturalIntent($question), $question);
+        }
+    }
+
     public function test_generic_store_wording_does_not_allow_named_locations_or_additional_filters(): void
     {
         $screen = new AssistantStoreTurnScreen;
@@ -75,6 +97,7 @@ class AssistantStoreTurnScreenTest extends TestCase
         $this->assertSame('i could use a lighthearted chat', $screen->screenNaturalIntent('I could use a lighthearted chat', allowPublicChat: true)['turn']);
         $this->assertSame('pwede ta magchika kadyot', $screen->screenNaturalIntent('Pwede ta magchika kadyot', allowPublicChat: true)['turn']);
         $this->assertSame('i could use a break from work', $screen->screenNaturalIntent('I could use a break from work', allowPublicChat: true)['turn']);
+        $this->assertSame('honestly it s been a slow day for me', $screen->screenNaturalIntent("Honestly, it's been a slow day for me.", allowPublicChat: true)['turn']);
         $this->assertNull($screen->screenNaturalIntent('I could use a break from work'));
         $this->assertNull($screen->screenNaturalIntent('I could use a lighthearted chat'));
 

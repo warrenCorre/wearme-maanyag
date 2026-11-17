@@ -34,6 +34,7 @@ class AssistantAnswerServiceTest extends TestCase
         foreach ([
             ['My day has been slow, can we just chat?', 'my day has been slow can we just chat'],
             ['I could use a break from work.', 'i could use a break from work'],
+            ["Honestly, it's been a slow day for me.", 'honestly it s been a slow day for me'],
         ] as [$question, $screenedTurn]) {
             $contextService = Mockery::mock(AssistantContextService::class);
             $contextService->shouldNotReceive('build');

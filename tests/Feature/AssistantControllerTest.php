@@ -62,6 +62,10 @@ class AssistantControllerTest extends TestCase
                 ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"reply":"Sorry it has been rough. Happy to listen."')
                     && str_ends_with($prompt, 'Current screened general-chat turn: not fantastic'))
                 ->andReturn('{"kind":"general_chat","reply":"I hear you. Want to tell me more?"}');
+            $mock->shouldReceive('generateText')->once()
+                ->withArgs(fn (string $prompt): bool => str_contains($prompt, '"reply":"I hear you. Want to tell me more?"')
+                    && str_ends_with($prompt, 'Current screened general-chat turn: nothing much'))
+                ->andReturn('{"kind":"general_chat","reply":"I am here if you feel like talking."}');
         });
         $this->actingAs($this->createUser('store_owner'));
 
@@ -74,11 +78,16 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'Not fantastic'])
             ->assertJsonPath('result.status', 'general_chat')
             ->assertJsonPath('result.message', 'I hear you. Want to tell me more?');
+        $this->postJson(route('assistant.ask'), ['question' => 'Nothing much.'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'I am here if you feel like talking.');
         $this->postJson(route('assistant.ask'), ['question' => 'Not Alicia'])
             ->assertJsonPath('result.status', 'declined');
 
         $this->get(route('assistant.index'))->assertOk();
         $this->postJson(route('assistant.ask'), ['question' => 'Not fantastic'])
+            ->assertJsonPath('result.status', 'declined');
+        $this->postJson(route('assistant.ask'), ['question' => 'Nothing much.'])
             ->assertJsonPath('result.status', 'declined');
         Http::assertNothingSent();
     }
