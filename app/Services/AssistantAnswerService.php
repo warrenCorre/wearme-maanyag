@@ -25,6 +25,7 @@ class AssistantAnswerService
         private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantModelIntentService $modelIntentService,
         private AssistantVerifiedFallback $verifiedFallback,
+        private AssistantCurrentActivityService $currentActivityService,
     ) {}
 
     /**
@@ -211,6 +212,24 @@ class AssistantAnswerService
             return [
                 'status' => 'disabled',
                 'message' => 'Assistant answers are disabled until sharing store data with Gemini is explicitly approved and enabled.',
+            ];
+        }
+
+        if ($decision['intent'] === 'current_activity') {
+            $activityDate = CarbonImmutable::instance($referenceDate ?? CarbonImmutable::now('Asia/Manila'))
+                ->setTimezone('Asia/Manila')->toDateString();
+
+            return [
+                'status' => 'answered',
+                'message' => $this->currentActivityService->answer($referenceDate),
+                'sources' => [[
+                    'type' => 'recorded_activity',
+                    'label' => 'Recorded sales, stock adjustments, products, collection dates and settlements',
+                    'as_of' => $activityDate,
+                ]],
+                'answer_type' => 'fact',
+                'confidence' => 'high',
+                'visit_context' => ['intent' => 'current_activity'],
             ];
         }
 

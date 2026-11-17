@@ -13,6 +13,43 @@ use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_model_can_select_current_activity_only_for_the_whole_store_and_today(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->times(3)
+            ->withArgs(fn (string $prompt, string $instruction, array $schema): bool => str_starts_with($prompt, 'Current screened store turn: ')
+                && str_contains($instruction, 'current_activity for a broad request')
+                && in_array('current_activity', $schema['properties']['intent']['enum'], true))
+            ->andReturn(
+                '{"intent":"current_activity","period":"none","scope":"overall"}',
+                '{"intent":"current_activity","period":"today","scope":"overall"}',
+                '{"intent":"current_activity","period":"today","scope":"overall"}',
+            );
+        $service = $this->service($client);
+
+        $this->assertSame(['question' => 'Summarize recorded store activity today', 'period' => null],
+            $service->interpret('Anything, just the latest actions happened in the Store.'));
+        $this->assertSame(['question' => 'Summarize recorded store activity today', 'period' => null],
+            $service->interpret('What happened in the store today?'));
+        $this->assertSame(['question' => 'Summarize recorded store activity today', 'period' => null],
+            $service->interpret('Anything else going on in the Store right now?'));
+        Http::assertNothingSent();
+    }
+
+    public function test_current_activity_cannot_drop_a_history_period_or_narrow_to_sales(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->twice()
+            ->andReturn('{"intent":"current_activity","period":"none","scope":"overall"}');
+        $service = $this->service($client);
+
+        $this->assertNull($service->interpret('What happened in the store last month?'));
+        $this->assertNull($service->interpret('What happened to sales in the store today?'));
+        Http::assertNothingSent();
+    }
+
     public function test_whole_store_wording_with_our_shop_can_request_a_metric_without_store_data(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

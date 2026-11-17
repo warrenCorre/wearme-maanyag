@@ -60,6 +60,7 @@ class AssistantController extends Controller
                 in_array($intent, ['sales_summary', 'best_sellers'], true), in_array($pending, ['sales_goal', 'sales_period'], true) => 'sales',
                 in_array($intent, ['inventory_summary', 'low_stock'], true) => 'inventory',
                 $intent === 'collection_dates' => 'collections',
+                $intent === 'current_activity' => 'activity',
                 default => $trustedPublicChat !== null ? 'other' : null,
             };
 
@@ -86,7 +87,7 @@ class AssistantController extends Controller
             ], now()->addMinutes(20));
         } elseif (($result['status'] === 'social' || ($result['visit_context']['social'] ?? false))
             && in_array($trustedVisitContext['intent'] ?? null, [
-                'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'damaged_adjustments', 'stock_adjustments',
+                'sales_summary', 'inventory_summary', 'low_stock', 'best_sellers', 'collection_dates', 'unpaid_summary', 'damaged_adjustments', 'stock_adjustments', 'current_activity',
             ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,

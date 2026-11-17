@@ -22,6 +22,26 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'));
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true]);
+        $this->app->instance(GeminiClient::class, new FakeGeminiClient);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'hey'])
+            ->assertJsonPath('result.status', 'general_chat');
+        $this->postJson(route('assistant.ask'), ['question' => 'Anything, just the latest actions happened in the Store.'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.answer_type', 'fact')
+            ->assertJsonPath('result.sources.0.type', 'recorded_activity')
+            ->assertJsonPath('result.sources.0.as_of', '2026-11-17')
+            ->assertSee('Recorded store activity for November 17, 2026')
+            ->assertSee('Sales recorded: 0')
+            ->assertJsonMissingPath('result.visit_context');
+        Http::assertNothingSent();
+    }
+
     public function test_owner_can_correct_a_chat_reply_without_repeating_its_words(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);

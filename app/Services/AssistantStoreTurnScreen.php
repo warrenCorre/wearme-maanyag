@@ -24,10 +24,10 @@ class AssistantStoreTurnScreen
     }
 
     private const WORDS = [
-        'a', 'about', 'all', 'and', 'are', 'at', 'balance', 'balances', 'best', 'can',
+        'a', 'about', 'actions', 'activity', 'all', 'and', 'anything', 'are', 'at', 'balance', 'balances', 'best', 'can',
         'check', 'collected', 'collection', 'collections', 'could', 'count', 'counts',
-        'current', 'did', 'do', 'doing', 'for', 'from', 'give', 'go', 'going', 'has', 'have', 'how',
-        'i', 'in', 'inventory', 'is', 'item', 'items', 'last', 'latest', 'list', 'low', 'many',
+        'current', 'did', 'do', 'doing', 'else', 'for', 'from', 'give', 'go', 'going', 'happened', 'happening', 'has', 'have', 'how',
+        'i', 'in', 'inventory', 'is', 'item', 'items', 'just', 'last', 'latest', 'list', 'low', 'many',
         'looking', 'me', 'month', 'most', 'much', 'my', 'newest', 'of', 'on', 'one', 'or', 'our',
         'outstanding', 'owe', 'owed', 'owing', 'payment', 'payments', 'pending',
         'please', 'product', 'products', 'quantity', 'recent', 'recently', 'revenue', 'running',
@@ -59,7 +59,7 @@ class AssistantStoreTurnScreen
 
     private const NATURAL_UNSAFE_TERMS = '/\b(?:'
         .'add|create|record|update|edit|change|delete|remove|archive|settle|pay|mark|execute|reveal|print|download|export|'
-        .'sql|database|credentials|adjustments?|damaged?|latest|newest|recent|individual|specific|'
+        .'sql|database|credentials|adjustments?|damaged?|individual|specific|'
         .'weather|politics|medical|recipe|next|ago|before|since|between|tomorrow|'
         .'monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
         .'or|also|plus|by|with|under|over|at|per|ni|kang|para|ug|og|apil|'
@@ -108,7 +108,11 @@ class AssistantStoreTurnScreen
             $turn,
         ) ?? $turn;
 
+        $recentActivity = preg_match('/\b(?:latest|newest|recent)\b/', $scopeCheck) === 1;
+        $overallActivity = preg_match('/\b(?:activity|activities|actions?|happened|happening|going on|updates?)\b/', $scopeCheck) === 1;
+
         if (substr_count($turn, ' ') >= 30 || preg_match(self::UNSAFE_TERMS, $turn) === 1
+            || ($recentActivity && ! $overallActivity)
             || preg_match(self::NATURAL_UNSAFE_TERMS, $scopeCheck) === 1
             || preg_match('/\b(?:for|in|during)\s+(?!(?:'.$periodPattern.'|stock|total|from (?:(?:our|the) )?(?:sales|store|shop))\b)/', $scopeCheck) === 1
             || preg_match('/\bfrom\s+(?!(?:(?:our|the) )?(?:sales|store|shop)\b)/', $turn) === 1

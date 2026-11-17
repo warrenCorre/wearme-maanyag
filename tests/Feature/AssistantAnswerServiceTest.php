@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
+use App\Services\AssistantCurrentActivityService;
 use App\Services\AssistantDamagedAdjustmentService;
 use App\Services\AssistantLatestUnpaidSaleService;
 use App\Services\AssistantModelIntentService;
@@ -26,6 +27,24 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_current_activity_still_requires_the_existing_store_sharing_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Summarize recorded store activity today',
+            CarbonImmutable::parse('2026-11-17 09:00:00', 'Asia/Manila'),
+        );
+
+        $this->assertSame('disabled', $result['status']);
+        $this->assertArrayNotHasKey('sources', $result);
+        Http::assertNothingSent();
+    }
+
     public function test_failed_interpretation_of_a_new_casual_turn_is_honestly_unavailable_without_store_access(): void
     {
         config(['services.gemini.allow_conversation' => true]);
@@ -1319,6 +1338,7 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantStoreTurnScreen,
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
             new AssistantVerifiedFallback,
+            new AssistantCurrentActivityService,
         );
     }
 }

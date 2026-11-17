@@ -7,6 +7,29 @@ use Tests\TestCase;
 
 class AssistantStoreTurnScreenTest extends TestCase
 {
+    public function test_broad_recent_activity_wording_reaches_interpretation_without_private_details(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        foreach ([
+            'What happened in the store today?' => ['what happened in the store today', 'today'],
+            'Anything, just the latest actions happened in the Store.' => ['anything just the latest actions happened in the store', null],
+            'Anything else going on in the Store right now?' => ['anything else going on in the store right now', null],
+        ] as $question => [$turn, $period]) {
+            $this->assertSame(['turn' => $turn, 'period' => $period], $screen->screenNaturalIntent($question));
+        }
+
+        foreach ([
+            'Show the latest sale for Ana',
+            'What happened in the store for alicia today?',
+            'What happened in the Cebu store today?',
+            'What happened in the store last month and today?',
+            'Show recent products',
+        ] as $question) {
+            $this->assertNull($screen->screenNaturalIntent($question), $question);
+        }
+    }
+
     public function test_generic_store_and_present_time_wording_reaches_the_interpreter_without_inventing_a_period(): void
     {
         $screen = new AssistantStoreTurnScreen;

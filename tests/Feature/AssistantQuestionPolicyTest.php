@@ -8,6 +8,16 @@ use Tests\TestCase;
 
 class AssistantQuestionPolicyTest extends TestCase
 {
+    public function test_only_the_canonical_current_activity_question_is_locally_allowed(): void
+    {
+        $policy = app(AssistantQuestionPolicy::class);
+        $date = CarbonImmutable::parse('2026-11-17');
+
+        $this->assertSame('current_activity', $policy->evaluate('Summarize recorded store activity today', $date)['intent']);
+        $this->assertFalse($policy->evaluate('Summarize recorded store activity for Ana today', $date)['allowed']);
+        $this->assertFalse($policy->evaluate('Summarize recorded store activity yesterday', $date)['allowed']);
+    }
+
     public function test_a_verified_chat_topic_can_resolve_a_joke_follow_up_without_being_required_for_a_first_joke(): void
     {
         $policy = app(AssistantQuestionPolicy::class);
