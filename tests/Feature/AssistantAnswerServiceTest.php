@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\AssistantAgenticTurnService;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
@@ -1458,6 +1459,7 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
             new AssistantVerifiedFallback,
             new AssistantCurrentActivityService,
+            $this->app->make(AssistantAgenticTurnService::class),
         );
     }
 }

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 
 #[Signature('assistant:eval {--group=} {--lang=} {--phase=0} {--flow=legacy} {--full} {--json} {--stub} {--limit=}')]
-#[Description('Measure Assistant routing with reviewed fictional questions')]
+#[Description('Measure legacy or agentic Assistant routing with reviewed fictional questions')]
 class AssistantEval extends Command
 {
     public function handle(AssistantEvaluationService $evaluationService): int

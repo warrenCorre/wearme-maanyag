@@ -8,6 +8,9 @@ use Throwable;
 
 class AssistantPrivacyFilter
 {
+    /** @var list<array{customer_name: ?string, customer_contact: ?string, transaction_no: ?string}>|null */
+    private ?array $saleHeaders = null;
+
     private const CREDENTIAL_PATTERN = '/(?:\b(?:password|passcode|secret|api[\s_-]*key|access[\s_-]*token|auth[\s_-]*token|token)\b\s*(?::|=|\bis\b)\s*\S+|\b(?:gh[pousr]_[A-Za-z0-9_]{12,}|AIza[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{16,})\b)/iu';
 
     private const EMAIL_PATTERN = '/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}/u';
@@ -47,21 +50,27 @@ class AssistantPrivacyFilter
                 $screened = $this->redact($screened, $pattern, $placeholder, $redacted);
             }
 
+            $fullName = '\\p{Lu}[\\p{Ll}]{2,}(?:\\s+(?:de|del|dela))?\\s+\\p{Lu}[\\p{Ll}]{2,}';
+            $screened = $this->redact($screened, '/\\b(?i:does|did|tell)\\s+\\K'.$fullName.'/u', '[private person]', $redacted);
+            $screened = $this->redact($screened, '/\\b(?:ni|kay)\\s+\\K[\\p{L}]{3,}(?:\\s+(?:de|del|dela))?(?:\\s+[\\p{L}]{3,})?/iu', '[private person]', $redacted);
+            $screened = $this->redact($screened, '/\\b(?:mr|mrs|ms)\\.\\s*\\K[\\p{L}]{3,}/iu', '[private person]', $redacted);
+            $screened = $this->redact($screened, '/\\bask\\s+\\K[\\p{Ll}]{3,}(?=\\s+if\\b)/u', '[private person]', $redacted);
+
             $names = [];
             $contacts = [];
             $references = [];
 
-            foreach (SalesTransaction::query()->select(['customer_name', 'customer_contact', 'transaction_no'])->cursor() as $sale) {
-                if (is_string($sale->customer_name) && trim($sale->customer_name) !== '') {
-                    $names[mb_strtolower(trim($sale->customer_name))] = trim($sale->customer_name);
+            foreach ($this->saleHeaders() as $sale) {
+                if (is_string($sale['customer_name']) && trim($sale['customer_name']) !== '') {
+                    $names[mb_strtolower(trim($sale['customer_name']))] = trim($sale['customer_name']);
                 }
 
-                if (is_string($sale->customer_contact) && trim($sale->customer_contact) !== '') {
-                    $contacts[$sale->customer_contact] = $sale->customer_contact;
+                if (is_string($sale['customer_contact']) && trim($sale['customer_contact']) !== '') {
+                    $contacts[$sale['customer_contact']] = $sale['customer_contact'];
                 }
 
-                if (is_string($sale->transaction_no) && trim($sale->transaction_no) !== '') {
-                    $references[$sale->transaction_no] = $sale->transaction_no;
+                if (is_string($sale['transaction_no']) && trim($sale['transaction_no']) !== '') {
+                    $references[$sale['transaction_no']] = $sale['transaction_no'];
                 }
             }
 
@@ -129,6 +138,24 @@ class AssistantPrivacyFilter
     private function wholeToken(string $value): string
     {
         return '/(?<![\p{L}\p{N}])'.preg_quote($value, '/').'(?![\p{L}\p{N}])/iu';
+    }
+
+    /** @return list<array{customer_name: ?string, customer_contact: ?string, transaction_no: ?string}> */
+    private function saleHeaders(): array
+    {
+        if ($this->saleHeaders === null) {
+            $this->saleHeaders = [];
+
+            foreach (SalesTransaction::query()->select(['customer_name', 'customer_contact', 'transaction_no'])->cursor() as $sale) {
+                $this->saleHeaders[] = [
+                    'customer_name' => $sale->customer_name,
+                    'customer_contact' => $sale->customer_contact,
+                    'transaction_no' => $sale->transaction_no,
+                ];
+            }
+        }
+
+        return $this->saleHeaders;
     }
 
     private function redact(string $text, string $pattern, string $placeholder, bool &$redacted): string

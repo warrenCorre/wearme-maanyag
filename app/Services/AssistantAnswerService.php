@@ -26,6 +26,7 @@ class AssistantAnswerService
         private AssistantModelIntentService $modelIntentService,
         private AssistantVerifiedFallback $verifiedFallback,
         private AssistantCurrentActivityService $currentActivityService,
+        private AssistantAgenticTurnService $agenticTurnService,
     ) {}
 
     /**
@@ -39,8 +40,12 @@ class AssistantAnswerService
      *     visit_context?: array{intent?: string, pending?: string, period?: ?string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>, social?: bool}
      * }
      */
-    public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null, bool $routingOnly = false): array
+    public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null, bool $routingOnly = false, ?string $flow = null): array
     {
+        if (($flow ?? config('assistant.mode', 'legacy')) === 'agentic') {
+            return $this->agenticTurnService->answer($question, $referenceDate, $visitContext, $routingOnly);
+        }
+
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
         $screened = $this->storeTurnScreen->screen($question);
         $knownBestSellerQuestion = $decision['allowed'] && $decision['intent'] === 'best_sellers';

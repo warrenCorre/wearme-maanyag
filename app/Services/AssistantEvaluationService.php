@@ -70,11 +70,12 @@ class AssistantEvaluationService
                     CarbonImmutable::now('Asia/Manila'),
                     $context,
                     routingOnly: true,
+                    flow: $options['flow'],
                 );
                 $actual = $this->normalize($result);
                 $nextContext = null;
 
-                if ($turnIndex < $lastTurnIndex && $actual['outcome'] === 'chat') {
+                if ($options['flow'] === 'legacy' && $turnIndex < $lastTurnIndex && $actual['outcome'] === 'chat') {
                     $history = is_array($context['chat_history'] ?? null) ? $context['chat_history'] : [];
                     $screenedTurn = $this->safeChatService->screenedTurn($turn['say'])
                         ?? $this->safeChatService->screenedFollowUp($turn['say'], $history);
@@ -168,8 +169,8 @@ class AssistantEvaluationService
     /** @param array<string, mixed> $options */
     private function validateOptions(array $options): void
     {
-        if ($options['flow'] !== 'legacy') {
-            throw new InvalidArgumentException('The agentic flow is not enabled until Phase 2.');
+        if (! in_array($options['flow'], ['legacy', 'agentic'], true)) {
+            throw new InvalidArgumentException('Flow must be legacy or agentic.');
         }
 
         if ($options['full']) {
@@ -187,6 +188,10 @@ class AssistantEvaluationService
 
         if (! $options['stub'] && ! config('services.gemini.allow_conversation', false)) {
             throw new InvalidArgumentException('Live evaluation requires existing conversation sharing; settings were not changed.');
+        }
+
+        if ($options['flow'] === 'agentic' && ! $options['stub'] && ($options['limit'] === null || (int) $options['limit'] > 5)) {
+            throw new InvalidArgumentException('Live agentic evaluation requires --limit=1 through 5 to protect the provider quota.');
         }
     }
 
@@ -228,6 +233,7 @@ class AssistantEvaluationService
                 $this->stubPayloads[] = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
                 $properties = $data['response_format']['schema']['properties'] ?? [];
                 $text = match (true) {
+                    isset($data['tools']) => '{"kind":"chat","reply":"I hear you."}',
                     isset($properties['kind']) => '{"kind":"general_chat","reply":"I hear you."}',
                     isset($properties['scope']) => '{"intent":"none","period":"none","scope":"overall"}',
                     isset($properties['intent']) => '{"intent":"none","period":"none"}',
@@ -249,6 +255,9 @@ class AssistantEvaluationService
     {
         if ($result['status'] === 'evaluation') {
             $evaluation = $result['evaluation'];
+            if (isset($evaluation['tool'])) {
+                return ['outcome' => 'answer', 'tool' => $evaluation['tool'], 'args' => $evaluation['args']];
+            }
             $intent = $evaluation['intent'];
 
             if (in_array($intent, ['general_chat', 'local_social'], true)) {
@@ -333,7 +342,11 @@ class AssistantEvaluationService
     {
         foreach ($canaries as $canary) {
             foreach ($payloads as $payload) {
-                if (mb_stripos($payload, $canary) !== false) {
+                $found = preg_match('/\\A[\\p{L}]{1,4}\\z/u', $canary) === 1
+                    ? preg_match('/(?<![\\p{L}])'.preg_quote($canary, '/').'(?![\\p{L}])/iu', $payload) === 1
+                    : mb_stripos($payload, $canary) !== false;
+
+                if ($found) {
                     return ['outcome' => 'privacy_leak'];
                 }
             }
