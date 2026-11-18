@@ -30,15 +30,16 @@ class AssistantAnswerService
 
     /**
      * @return array{
-     *     status: 'declined'|'disabled'|'answered'|'social'|'general_chat'|'clarification'|'refused'|'invalid'|'unavailable',
+     *     status: 'declined'|'disabled'|'answered'|'social'|'general_chat'|'clarification'|'refused'|'invalid'|'unavailable'|'evaluation',
      *     message: string,
      *     sources?: array<int, array{type: string, label: string, as_of: string}>,
      *     answer_type?: string,
      *     confidence?: string,
+     *     evaluation?: array{intent: string, period: ?string, date: ?string, clarification: ?string},
      *     visit_context?: array{intent?: string, pending?: string, period?: ?string, chat_topic?: string, store_topic?: string, chat_history?: list<array{turn: string, reply: string}>, social?: bool}
      * }
      */
-    public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null): array
+    public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null, bool $routingOnly = false): array
     {
         $decision = $this->questionPolicy->evaluate($question, $referenceDate, $visitContext);
         $screened = $this->storeTurnScreen->screen($question);
@@ -136,6 +137,32 @@ class AssistantAnswerService
             return [
                 'status' => 'declined',
                 'message' => $decision['reason'] ?? 'That question is not supported.',
+            ];
+        }
+
+        if ($routingOnly) {
+            $intent = $decision['intent'];
+
+            if (! in_array($intent, ['local_social', 'general_chat', 'clarification', 'latest_unpaid_sale'], true)
+                && ! config('services.gemini.allow_store_data', false)) {
+                return ['status' => 'disabled', 'message' => 'Store-data sharing is disabled.'];
+            }
+
+            return [
+                'status' => 'evaluation',
+                'message' => '',
+                'evaluation' => [
+                    'intent' => $intent,
+                    'period' => $decision['period'] ?? null,
+                    'date' => $decision['date'] ?? null,
+                    'clarification' => $decision['clarification'] ?? null,
+                ],
+                'visit_context' => match ($intent) {
+                    'clarification' => ['pending' => $decision['clarification']],
+                    'general_chat' => ['chat_topic' => 'thrift'],
+                    'local_social' => [],
+                    default => ['intent' => $intent],
+                },
             ];
         }
 
