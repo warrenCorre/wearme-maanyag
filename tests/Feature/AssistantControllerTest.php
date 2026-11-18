@@ -33,7 +33,7 @@ class AssistantControllerTest extends TestCase
         Http::preventStrayRequests();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hey, I am here."}']]]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => (object) []]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'stock']]]]);
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
@@ -59,7 +59,7 @@ class AssistantControllerTest extends TestCase
         Http::preventStrayRequests();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area would you like for last month?","pending":"store_goal","period":"last_month"}']]]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month']]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]]);
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])

@@ -64,7 +64,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area would you like to check?","pending":"store_goal","period":"last_month"}']]]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month']]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]]);
         $service = app(AssistantAgenticTurnService::class);
 
         $first = $service->answer('How did we do last month?', routingOnly: true);
@@ -89,6 +89,45 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame(['pending' => 'store_goal'], $result['visit_context']);
     }
 
+    public function test_a_tool_call_cannot_invent_a_store_measure_missing_from_the_turn(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'sales', 'period_evidence' => 'last month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure would you like to check?","pending":"store_goal","period":"last_month"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('How did our shop do last month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_generic_shop_quote_cannot_justify_a_sales_tool(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'our shop do last month', 'period_evidence' => 'last month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure did you mean?","pending":"store_goal"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('How did our shop do last month?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('Which store measure did you mean?', $result['message']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_sales_follow_up_cannot_assume_a_period_when_none_was_kept(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which reporting period would you like?","pending":"sales_period"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Sales, please', visitContext: ['pending' => 'store_goal']);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'sales_period'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
     public function test_private_credential_is_blocked_before_a_provider_call(): void
     {
         Http::fake();
@@ -102,7 +141,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     public function test_valid_store_tool_is_selected_without_releasing_facts_to_gemini(): void
     {
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
-            'status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_1', 'name' => 'unpaid_aggregate', 'arguments' => (object) []]],
+            'status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_1', 'name' => 'unpaid_aggregate', 'arguments' => ['metric_evidence' => 'outstanding']]],
         ])]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('How much is outstanding overall?');
@@ -116,7 +155,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     public function test_invalid_tool_arguments_receive_one_structured_error_and_no_store_result(): void
     {
         Http::fakeSequence()
-            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_2', 'name' => 'sales_summary', 'arguments' => ['period' => 'today', 'customer' => 'Fictional']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_2', 'name' => 'sales_summary', 'arguments' => ['period' => 'today', 'customer' => 'Fictional', 'metric_evidence' => 'sales', 'period_evidence' => '']]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Please ask for overall sales without a customer filter."}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show overall sales for a fictional customer');
@@ -132,7 +171,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         config(['assistant.send_store_results_to_gemini' => true]);
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
-            'status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_3', 'name' => 'adjustment_totals', 'arguments' => ['kind' => 'damaged', 'period' => 'today']]],
+            'status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_3', 'name' => 'adjustment_totals', 'arguments' => ['kind' => 'damaged', 'period' => 'today', 'metric_evidence' => 'damaged-item adjustments', 'period_evidence' => 'today']]],
         ])]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('How many damaged-item adjustments today?');
@@ -144,9 +183,9 @@ class AssistantAgenticTurnServiceTest extends TestCase
 
     public function test_individual_unpaid_sale_requires_confirmation_and_stays_local(): void
     {
-        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
-            'status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_private', 'name' => 'latest_unpaid_sale', 'arguments' => (object) []]],
-        ])]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_private', 'name' => 'latest_unpaid_sale', 'arguments' => ['metric_evidence' => 'latest unpaid sale']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_private', 'name' => 'latest_unpaid_sale', 'arguments' => ['metric_evidence' => '']]]]);
         $service = app(AssistantAgenticTurnService::class);
 
         $first = $service->answer('Show me the latest unpaid sale.');
@@ -166,7 +205,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [
                 ['type' => 'thought', 'signature' => 'fictional-signature'],
-                ['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'today']],
+                ['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'today', 'metric_evidence' => 'sales', 'period_evidence' => 'today']],
             ]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Recorded sales: 9999 transactions.']]]]]);
 

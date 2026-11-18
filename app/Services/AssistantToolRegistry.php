@@ -46,12 +46,27 @@ class AssistantToolRegistry
         $tools = [];
 
         foreach ($this->definitions() as $name => $definition) {
+            $properties = $definition['properties'];
+            $properties['metric_evidence'] = [
+                'type' => 'string',
+                'description' => 'Exact quote from the current screened turn naming the requested measure. Use an empty string only when the trusted previous store topic supplies the measure.',
+            ];
+            $required = [...$definition['required'], 'metric_evidence'];
+
+            if (array_key_exists('period', $definition['properties']) && $name !== 'recent_activity') {
+                $properties['period_evidence'] = [
+                    'type' => 'string',
+                    'description' => 'Exact quote from the current screened turn naming this period. Use an empty string only when the trusted pending clarification period supplies it.',
+                ];
+                $required[] = 'period_evidence';
+            }
+
             $tools[] = [
                 'type' => 'function', 'name' => $name, 'description' => $definition['description'],
                 'parameters' => [
                     'type' => 'object',
-                    'properties' => $definition['properties'] === [] ? (object) [] : $definition['properties'],
-                    'required' => $definition['required'],
+                    'properties' => $properties,
+                    'required' => $required,
                 ],
             ];
         }
