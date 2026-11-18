@@ -113,6 +113,21 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('clarification', $result['status']);
         $this->assertSame('Which store measure did you mean?', $result['message']);
         Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'current Owner turn is in English'));
+    }
+
+    public function test_a_generic_cebuano_shop_quote_asks_for_a_measure_in_the_current_language(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'atong tindahan niaging bulan', 'period_evidence' => 'niaging bulan']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Unsa nga bahin ang gusto nimong susihon?","pending":"store_goal"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Kumusta atong tindahan niaging bulan?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('Unsa nga bahin ang gusto nimong susihon?', $result['message']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'current Owner turn is in Cebuano'));
     }
 
     public function test_a_sales_follow_up_cannot_assume_a_period_when_none_was_kept(): void
