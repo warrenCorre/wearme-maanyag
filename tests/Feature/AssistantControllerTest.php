@@ -49,6 +49,30 @@ class AssistantControllerTest extends TestCase
             && ! str_contains(json_encode($request->data()), 'stock_value'));
     }
 
+    public function test_agentic_clarification_keeps_the_explicit_period_across_http_turns(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area would you like for last month?","pending":"store_goal","period":"last_month"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month']]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
+    }
+
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'));

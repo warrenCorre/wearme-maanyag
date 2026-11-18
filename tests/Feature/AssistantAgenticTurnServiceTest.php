@@ -60,6 +60,35 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('Hi there!', $result['message']);
     }
 
+    public function test_clarification_retains_an_explicit_period_for_a_natural_follow_up(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area would you like to check?","pending":"store_goal","period":"last_month"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month']]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $first = $service->answer('How did we do last month?', routingOnly: true);
+        $second = $service->answer('Sales, please', visitContext: $first['visit_context'], routingOnly: true);
+
+        $this->assertSame('clarification', $first['status']);
+        $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $first['visit_context']);
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'last_month']], $second['evaluation']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
+    }
+
+    public function test_invalid_clarification_period_is_not_kept_as_visit_context(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area?","pending":"store_goal","period":"some_day"}']]]],
+        ])]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('How did the shop do?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'store_goal'], $result['visit_context']);
+    }
+
     public function test_private_credential_is_blocked_before_a_provider_call(): void
     {
         Http::fake();
