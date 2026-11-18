@@ -217,7 +217,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.sources.0.label', 'Sales summary');
         $this->postJson(route('assistant.ask'), ['question' => 'Could you show the previous month too?'])
             ->assertJsonPath('result.status', 'answered')
-            ->assertSee('monthly sales for 2026-10-16');
+            ->assertSee('sales for October 2026');
         $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.sources.0.label', 'Inventory summary')
@@ -536,7 +536,7 @@ class AssistantControllerTest extends TestCase
         $this->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.sources.0.type', 'sales')
-            ->assertSee('Recorded monthly sales for 2026-11-18');
+            ->assertSee('Recorded sales for November 2026');
 
         Http::assertNothingSent();
     }
@@ -1052,7 +1052,7 @@ class AssistantControllerTest extends TestCase
 
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this year'])
             ->assertJsonPath('result.status', 'answered')
-            ->assertJsonPath('result.message', 'Recorded yearly sales for 2026-11-15: 0 transactions totaling PHP 0.00.')
+            ->assertJsonPath('result.message', 'Recorded sales for 2026: 0 transactions totaling PHP 0.00.')
             ->assertJsonPath('result.sources.0.type', 'sales')
             ->assertJsonPath('result.sources.0.as_of', '2026-11-15')
             ->assertJsonMissingPath('result.visit_context');

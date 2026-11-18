@@ -53,7 +53,20 @@ class AssistantVerifiedFallback
             return null;
         }
 
-        return 'Recorded '.$period.' sales for '.$date.': '.$count.' '.($count === 1 ? 'transaction' : 'transactions').' totaling '.$this->money($total).'.';
+        $dateValue = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        if ($dateValue === false || $dateValue->format('Y-m-d') !== $date) {
+            return null;
+        }
+
+        $periodLabel = match ($period) {
+            'daily' => $dateValue->format('F j, Y'),
+            'weekly' => 'the week starting '.$dateValue->modify('-'.($dateValue->format('N') - 1).' days')->format('F j, Y'),
+            'monthly' => $dateValue->format('F Y'),
+            'yearly' => $dateValue->format('Y'),
+        };
+
+        return 'Recorded sales for '.$periodLabel.': '.$count.' '.($count === 1 ? 'transaction' : 'transactions').' totaling '.$this->money($total).'.';
     }
 
     private function inventoryMessage(mixed $stats): ?string
