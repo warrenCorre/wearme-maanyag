@@ -430,7 +430,39 @@ class AssistantAnswerServiceTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
-        config(['services.gemini.allow_conversation' => false]);
+        config([
+            'services.gemini.allow_conversation' => false,
+            'assistant.send_store_results_to_gemini' => true,
+            'assistant.paid_tier_reviewed' => true,
+        ]);
+    }
+
+    public function test_legacy_store_results_stay_local_until_both_paid_review_switches_are_enabled(): void
+    {
+        config(['services.gemini.allow_store_data' => true]);
+
+        foreach ([[false, false], [true, false], [false, true]] as [$shareResults, $paidTierReviewed]) {
+            config([
+                'assistant.send_store_results_to_gemini' => $shareResults,
+                'assistant.paid_tier_reviewed' => $paidTierReviewed,
+            ]);
+
+            $contextService = Mockery::mock(AssistantContextService::class);
+            $contextService->shouldReceive('build')->once()->andReturn($this->salesContext());
+            $geminiClient = Mockery::mock(GeminiClient::class);
+            $geminiClient->shouldNotReceive('generateText');
+
+            $result = $this->makeAnswerService($contextService, $geminiClient)->answer(
+                'Show me sales for this month?',
+                CarbonImmutable::parse('2026-11-01'),
+            );
+
+            $this->assertSame('answered', $result['status']);
+            $this->assertSame('Recorded monthly sales for 2026-11-01: 4 transactions totaling PHP 125.00.', $result['message']);
+            $this->assertSame('sales', $result['sources'][0]['type']);
+        }
+
+        Http::assertNothingSent();
     }
 
     public function test_it_does_not_read_store_context_or_call_gemini_when_data_sharing_is_disabled(): void

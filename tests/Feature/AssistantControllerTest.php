@@ -488,7 +488,33 @@ class AssistantControllerTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
-        config(['services.gemini.allow_conversation' => false]);
+        config([
+            'services.gemini.allow_conversation' => false,
+            'assistant.send_store_results_to_gemini' => true,
+            'assistant.paid_tier_reviewed' => true,
+        ]);
+    }
+
+    public function test_owner_sees_local_legacy_sales_without_sending_store_results_on_the_free_tier(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-18 12:00:00', 'Asia/Manila'));
+        config([
+            'assistant.mode' => 'legacy',
+            'assistant.send_store_results_to_gemini' => false,
+            'assistant.paid_tier_reviewed' => false,
+            'services.gemini.allow_store_data' => true,
+        ]);
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertSee('Recorded monthly sales for 2026-11-18');
+
+        Http::assertNothingSent();
     }
 
     public function test_first_joke_and_follow_up_use_only_a_visit_topic_then_new_chat_starts_a_fresh_joke(): void
@@ -1335,7 +1361,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill.');
         $response->assertSee('Brief casual replies can reach Gemini as typed after basic privacy checks.');
         $response->assertSee('Free-text screening can miss a private detail, including a lowercase name.');
-        $response->assertSee('Store-data sharing requires separate approval; Gemini cannot directly access the database.');
+        $response->assertSee('Store-data sharing requires separate approval; retrieved store results stay on this system on the free tier. Gemini cannot directly access the database.');
         $response->assertSee('New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.');
         $response->assertDontSee('chats are not saved');
         $response->assertSee('Greetings and brief chat still work with a local fallback');
