@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\AssistantAgenticTurnService;
 use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use App\Services\AssistantConversationService;
@@ -27,6 +28,62 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_routing_only_handles_chat_decisions_without_a_store_date_or_generated_reply(): void
+    {
+        config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()
+            ->andReturn('{"intent":"general_chat","period":"none","scope":"overall"}');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Uhmm, nothing really',
+            routingOnly: true,
+        );
+
+        $this->assertSame('evaluation', $result['status']);
+        $this->assertSame('general_chat', $result['evaluation']['intent']);
+        $this->assertNull($result['evaluation']['date']);
+    }
+
+    public function test_routing_only_reports_a_sales_choice_without_reading_facts_or_generating_a_reply(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => true]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Show me sales for this month',
+            CarbonImmutable::parse('2026-11-17', 'Asia/Manila'),
+            routingOnly: true,
+        );
+
+        $this->assertSame('evaluation', $result['status']);
+        $this->assertSame('sales_summary', $result['evaluation']['intent']);
+        $this->assertSame('monthly', $result['evaluation']['period']);
+        $this->assertArrayNotHasKey('sources', $result);
+    }
+
+    public function test_routing_only_keeps_the_store_sharing_gate(): void
+    {
+        config(['services.gemini.allow_conversation' => false, 'services.gemini.allow_store_data' => false]);
+        $contextService = Mockery::mock(AssistantContextService::class);
+        $contextService->shouldNotReceive('build');
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldNotReceive('generateText');
+
+        $result = $this->makeAnswerService($contextService, $client)->answer(
+            'Summarize recorded store activity today',
+            CarbonImmutable::parse('2026-11-17', 'Asia/Manila'),
+            routingOnly: true,
+        );
+
+        $this->assertSame('disabled', $result['status']);
+    }
+
     public function test_ordinary_personal_chat_reaches_gemini_without_store_context(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
@@ -1402,6 +1459,7 @@ class AssistantAnswerServiceTest extends TestCase
             new AssistantModelIntentService($geminiClient, new AssistantStoreTurnScreen, new AssistantSafeTurnScreen),
             new AssistantVerifiedFallback,
             new AssistantCurrentActivityService,
+            $this->app->make(AssistantAgenticTurnService::class),
         );
     }
 }

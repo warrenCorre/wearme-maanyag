@@ -96,13 +96,17 @@ class AssistantSafeChatService
                 $instruction .= "\nWrite a different brief social reply. Avoid store claims, quantities, dates, personal details, links and instructions.";
             }
 
+            $startedAt = hrtime(true);
+
             try {
                 $raw = $this->geminiClient->generateText($prompt, $instruction, self::RESPONSE_SCHEMA);
             } catch (ConnectionException|RequestException|RuntimeException|LogicException $exception) {
                 Log::warning('Assistant chat fallback', [
+                    'stage' => 'reply',
                     'reason' => 'generation_failed',
                     'exception' => $exception::class,
                     'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                    'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
                 ]);
 
                 return ['status' => 'unavailable', 'message' => self::TEMPORARY_UNAVAILABLE_MESSAGE];
@@ -111,7 +115,12 @@ class AssistantSafeChatService
             try {
                 $response = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
             } catch (JsonException) {
-                Log::warning('Assistant chat fallback', ['reason' => 'invalid_json']);
+                Log::warning('Assistant chat fallback', [
+                    'stage' => 'reply',
+                    'reason' => 'invalid_json',
+                    'http_status' => null,
+                    'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+                ]);
 
                 continue;
             }
@@ -119,7 +128,12 @@ class AssistantSafeChatService
             if (! is_array($response) || count($response) !== 2
                 || ($response['kind'] ?? null) !== 'general_chat'
                 || ! is_string($response['reply'] ?? null)) {
-                Log::warning('Assistant chat fallback', ['reason' => 'invalid_response']);
+                Log::warning('Assistant chat fallback', [
+                    'stage' => 'reply',
+                    'reason' => 'invalid_response',
+                    'http_status' => null,
+                    'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+                ]);
 
                 continue;
             }
@@ -130,7 +144,12 @@ class AssistantSafeChatService
                 return ['status' => 'generated', 'message' => $reply];
             }
 
-            Log::warning('Assistant chat fallback', ['reason' => 'reply_not_screened']);
+            Log::warning('Assistant chat fallback', [
+                'stage' => 'reply',
+                'reason' => 'reply_not_screened',
+                'http_status' => null,
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
         }
 
         return ['status' => 'unavailable', 'message' => self::TEMPORARY_UNAVAILABLE_MESSAGE];

@@ -8,11 +8,29 @@ use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
 class AssistantModelIntentServiceTest extends TestCase
 {
+    public function test_intent_failure_log_contains_status_and_timing_without_the_question_or_secret(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Fictional secret in exception'));
+        Log::shouldReceive('warning')->once()->withArgs(function (string $message, array $details): bool {
+            return $message === 'Assistant model interpretation failed'
+                && $details['stage'] === 'intent'
+                && $details['http_status'] === null
+                && $details['exception'] === ConnectionException::class
+                && is_int($details['latency_ms'])
+                && ! str_contains(json_encode($details), 'Fictional secret');
+        });
+
+        $this->service($client)->interpret('Could we chat for a while?');
+    }
+
     public function test_varied_aggregate_store_wording_reaches_only_validated_gemini_intents(): void
     {
         config(['services.gemini.allow_conversation' => true]);

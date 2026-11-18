@@ -13,6 +13,7 @@ use App\Services\GeminiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\Support\FakeGeminiClient;
@@ -21,6 +22,32 @@ use Tests\TestCase;
 class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_flagged_agentic_owner_can_chat_then_get_a_locally_verified_store_answer(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hey, I am here."}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => (object) []]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'Hey, I am here.');
+        $this->postJson(route('assistant.ask'), ['question' => 'How is our stock looking overall?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory')
+            ->assertJsonMissingPath('result.visit_context');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains(json_encode($request['input']), 'Hey Maanyag')
+            && ! str_contains(json_encode($request->data()), 'stock_value'));
+    }
 
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
     {

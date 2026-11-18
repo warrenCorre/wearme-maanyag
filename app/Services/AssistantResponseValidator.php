@@ -312,6 +312,16 @@ class AssistantResponseValidator
         return null;
     }
 
+    /** @param array<string, mixed> $verifiedFacts */
+    public function isGroundedAgenticReply(string $reply, array $verifiedFacts = []): bool
+    {
+        return trim($reply) !== ''
+            && mb_strlen($reply) <= 2000
+            && preg_match('/[\\p{C}]/u', $reply) !== 1
+            && preg_match('/(?:https?:\\/\\/|www\\.|[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}.-]+\\.[\\p{L}]{2,})/iu', $reply) !== 1
+            && $this->findUngroundedNumber($reply, $verifiedFacts) === null;
+    }
+
     /**
      * @param  array<string, mixed>  $context
      * @return array<int, float>

@@ -58,6 +58,49 @@ class GeminiClient
     }
 
     /**
+     * @param  list<array<string, mixed>>  $input
+     * @param  list<array<string, mixed>>  $tools
+     * @return list<array<string, mixed>>
+     */
+    public function interactWithTools(array $input, array $tools, string $systemInstruction, bool $allowTools = true): array
+    {
+        $payload = [
+            'model' => config('services.gemini.model'),
+            'input' => $input,
+            'store' => false,
+            'system_instruction' => $systemInstruction,
+        ];
+
+        if ($tools !== []) {
+            $payload['tools'] = $tools;
+            $payload['generation_config'] = ['tool_choice' => $allowTools ? 'auto' : 'none'];
+        }
+
+        $response = $this->request()->post('interactions', $payload)->throw();
+
+        $steps = $response->json('steps');
+
+        $status = $response->json('status');
+
+        if (! in_array($status, ['completed', 'requires_action'], true)
+            || ! is_array($steps) || ! array_is_list($steps) || $steps === []) {
+            throw new RuntimeException('Gemini did not complete the tool interaction.');
+        }
+
+        if ($status === 'requires_action' && ! collect($steps)->contains(fn (mixed $step): bool => is_array($step) && ($step['type'] ?? null) === 'function_call')) {
+            throw new RuntimeException('Gemini requested an unknown action.');
+        }
+
+        foreach ($steps as $step) {
+            if (! is_array($step) || ! is_string($step['type'] ?? null)) {
+                throw new RuntimeException('Gemini returned an invalid tool step.');
+            }
+        }
+
+        return $steps;
+    }
+
+    /**
      * @return array<int, float>
      */
     public function embedContent(string $text, string $taskType = 'RETRIEVAL_DOCUMENT'): array

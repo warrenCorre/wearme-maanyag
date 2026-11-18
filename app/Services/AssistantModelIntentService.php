@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 use LogicException;
 use RuntimeException;
@@ -83,6 +84,8 @@ class AssistantModelIntentService
             $prompt = 'Validated pending goal: '.$pendingGoal.'. '.$prompt;
         }
 
+        $startedAt = hrtime(true);
+
         try {
             $raw = $this->geminiClient->generateText(
                 $prompt,
@@ -90,14 +93,33 @@ class AssistantModelIntentService
                 self::NATURAL_RESPONSE_SCHEMA,
             );
             $result = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException) {
+        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {
+            Log::warning('Assistant model interpretation failed', [
+                'stage' => 'intent',
+                'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                'exception' => $exception::class,
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
+
             return ['question' => null, 'period' => null, 'unavailable' => true];
         }
 
-        if (! is_array($result) || count($result) !== 3 || ($result['scope'] ?? null) !== 'overall'
+        if (! is_array($result) || count($result) !== 3
             || ! is_string($result['intent'] ?? null) || ! is_string($result['period'] ?? null)
             || ! in_array($result['intent'], self::NATURAL_RESPONSE_SCHEMA['properties']['intent']['enum'], true)
-            || ! in_array($result['period'], self::RESPONSE_SCHEMA['properties']['period']['enum'], true)) {
+            || ! in_array($result['period'], self::RESPONSE_SCHEMA['properties']['period']['enum'], true)
+            || ! in_array($result['scope'] ?? null, self::NATURAL_RESPONSE_SCHEMA['properties']['scope']['enum'], true)) {
+            Log::warning('Assistant model interpretation failed', [
+                'stage' => 'intent',
+                'http_status' => null,
+                'exception' => 'invalid_response',
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
+
+            return null;
+        }
+
+        if ($result['scope'] !== 'overall') {
             return null;
         }
 
@@ -208,6 +230,8 @@ class AssistantModelIntentService
     /** @return array{intent: string, period: string}|null */
     private function classify(string $prompt): ?array
     {
+        $startedAt = hrtime(true);
+
         try {
             $raw = $this->geminiClient->generateText(
                 $prompt,
@@ -215,12 +239,26 @@ class AssistantModelIntentService
                 self::RESPONSE_SCHEMA,
             );
             $response = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException) {
+        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {
+            Log::warning('Assistant model classification failed', [
+                'stage' => 'intent',
+                'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                'exception' => $exception::class,
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
+
             return null;
         }
 
         if (! is_array($response) || count($response) !== 2
             || ! is_string($response['intent'] ?? null) || ! is_string($response['period'] ?? null)) {
+            Log::warning('Assistant model classification failed', [
+                'stage' => 'intent',
+                'http_status' => null,
+                'exception' => 'invalid_response',
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
+
             return null;
         }
 

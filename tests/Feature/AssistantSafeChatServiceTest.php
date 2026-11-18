@@ -8,11 +8,29 @@ use App\Services\AssistantStoreTurnScreen;
 use App\Services\GeminiClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
 class AssistantSafeChatServiceTest extends TestCase
 {
+    public function test_chat_failure_log_contains_only_sanitized_stage_status_and_timing(): void
+    {
+        config(['services.gemini.allow_conversation' => true]);
+        $client = Mockery::mock(GeminiClient::class);
+        $client->shouldReceive('generateText')->once()->andThrow(new ConnectionException('Fictional private exception'));
+        Log::shouldReceive('warning')->once()->withArgs(function (string $message, array $details): bool {
+            return $message === 'Assistant chat fallback'
+                && $details['stage'] === 'reply'
+                && $details['reason'] === 'generation_failed'
+                && $details['http_status'] === null
+                && is_int($details['latency_ms'])
+                && ! str_contains(json_encode($details), 'Fictional private');
+        });
+
+        $this->service($client)->replyWithStatus('Could we chat about thrift finds?');
+    }
+
     public function test_short_reactions_need_valid_public_history_but_no_matching_reply_word(): void
     {
         config(['services.gemini.allow_conversation' => true]);

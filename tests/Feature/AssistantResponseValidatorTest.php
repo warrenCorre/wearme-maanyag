@@ -35,6 +35,13 @@ class AssistantResponseValidatorTest extends TestCase
         $this->assertSame($this->salesSources(), $result['response']['sources']);
     }
 
+    public function test_agentic_reply_rejects_unverified_numbers_and_links(): void
+    {
+        $this->assertTrue($this->validator->isGroundedAgenticReply('Recorded total: PHP 12.00.', ['total' => 12.0]));
+        $this->assertFalse($this->validator->isGroundedAgenticReply('Recorded total: PHP 13.00.', ['total' => 12.0]));
+        $this->assertFalse($this->validator->isGroundedAgenticReply('See https://example.test.', []));
+    }
+
     public function test_it_maps_inventory_intents_to_their_expected_source_labels(): void
     {
         $context = $this->salesContext();

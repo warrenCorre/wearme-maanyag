@@ -56,6 +56,34 @@ class GeminiClientTest extends TestCase
         );
     }
 
+    public function test_stateless_tool_interaction_preserves_steps_and_disables_provider_storage(): void
+    {
+        $steps = [['type' => 'thought', 'signature' => 'fictional-signature'], ['type' => 'function_call', 'id' => 'call_1', 'name' => 'sales_summary', 'arguments' => ['period' => 'today']]];
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['status' => 'completed', 'steps' => $steps])]);
+        $input = [['type' => 'user_input', 'content' => [['type' => 'text', 'text' => 'Fictional sale question']]]];
+        $tools = [['type' => 'function', 'name' => 'sales_summary', 'description' => 'Read aggregate sales', 'parameters' => ['type' => 'object', 'properties' => ['period' => ['type' => 'string']]]]];
+
+        $result = app(GeminiClient::class)->interactWithTools($input, $tools, 'Use verified tools.');
+
+        $this->assertSame($steps, $result);
+        Http::assertSent(fn (Request $request): bool => $request['store'] === false
+            && $request['input'] === $input
+            && $request['tools'] === $tools
+            && $request['generation_config']['tool_choice'] === 'auto'
+            && ! isset($request['previous_interaction_id']));
+    }
+
+    public function test_tool_interaction_accepts_provider_action_status_only_with_a_function_call(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'requires_action', 'steps' => [['type' => 'function_call', 'id' => 'call_1', 'name' => 'inventory_summary', 'arguments' => (object) []]],
+        ])]);
+
+        $steps = app(GeminiClient::class)->interactWithTools([['type' => 'user_input', 'content' => 'Fictional inventory question']], [], 'Use verified tools.');
+
+        $this->assertSame('function_call', $steps[0]['type']);
+    }
+
     public function test_it_sends_a_structured_response_format_when_a_schema_is_supplied(): void
     {
         Http::fake([
