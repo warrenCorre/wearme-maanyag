@@ -73,6 +73,33 @@ class AssistantControllerTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
     }
 
+    public function test_agentic_public_aggregate_offer_survives_one_owner_follow_up_without_leaking_context(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-18 10:00:00', 'Asia/Manila'));
+        config([
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I can show total sales this month instead. Want that?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"this_month"}}}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => '', 'period_evidence' => '']]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Show sales by cashier this month?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonMissingPath('result.visit_context');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_offer":{"tool":"sales_summary"')
+            && ! str_contains(json_encode($request->data()), 'total_sales'));
+    }
+
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'));

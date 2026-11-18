@@ -81,13 +81,15 @@ class AssistantController extends Controller
                 'intent' => $result['visit_context']['intent'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'clarification' && in_array($result['visit_context']['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation', 'store_goal',
+            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation', 'store_goal', 'offered_tool',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
                 'pending' => $result['visit_context']['pending'],
                 ...($result['visit_context']['pending'] === 'store_goal'
                     ? ['period' => $result['visit_context']['period'] ?? null] : []),
+                ...($result['visit_context']['pending'] === 'offered_tool'
+                    ? ['offer' => $result['visit_context']['offer'] ?? null] : []),
             ], now()->addMinutes(20));
         } elseif (($result['status'] === 'social' || ($result['visit_context']['social'] ?? false))
             && in_array($trustedVisitContext['intent'] ?? null, [
