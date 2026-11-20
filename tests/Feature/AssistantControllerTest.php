@@ -73,6 +73,32 @@ class AssistantControllerTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
     }
 
+    public function test_agentic_sales_period_reply_uses_the_pending_sales_measure_across_http_turns(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which period for sales?","pending":"sales_period"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'yesterday', 'metric_evidence' => '', 'period_evidence' => 'Yesterday']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Show me total sales'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yesterday would be great'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'])
+            && str_contains($request['input'], '"trusted_pending_clarification":"sales_period"'));
+    }
+
     public function test_agentic_public_aggregate_offer_survives_one_owner_follow_up_without_leaking_context(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-18 10:00:00', 'Asia/Manila'));

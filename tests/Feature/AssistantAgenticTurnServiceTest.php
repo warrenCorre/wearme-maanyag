@@ -7,7 +7,9 @@ use App\Services\AssistantAgenticTurnService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class AssistantAgenticTurnServiceTest extends TestCase
@@ -49,6 +51,24 @@ class AssistantAgenticTurnServiceTest extends TestCase
             && str_contains($request['input'][0]['content'][0]['text'], 'Hey there'));
     }
 
+    public function test_provider_failure_logs_only_stage_status_type_and_latency(): void
+    {
+        Log::spy();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic sensitive provider message']], 503)]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Hello there');
+
+        $this->assertSame('unavailable', $result['status']);
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
+            return $message === 'Assistant agentic provider failed'
+                && array_keys($context) === ['stage', 'http_status', 'exception', 'latency_ms']
+                && $context['stage'] === 'tool_routing'
+                && $context['http_status'] === 503
+                && $context['exception'] === RequestException::class
+                && is_int($context['latency_ms']);
+        });
+    }
+
     public function test_chat_reply_accepts_a_single_json_code_fence_from_gemini(): void
     {
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
@@ -76,6 +96,23 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'last_month']], $second['evaluation']);
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
+    }
+
+    public function test_pending_sales_period_supplies_only_the_sales_measure_for_a_period_reply(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'yesterday', 'metric_evidence' => '', 'period_evidence' => 'Yesterday']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer(
+            'Yesterday would be great', visitContext: ['pending' => 'sales_period'], routingOnly: true,
+        );
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'yesterday']], $result['evaluation']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'])
+            && str_contains($request['input'], '"trusted_pending_clarification":"sales_period"'));
     }
 
     public function test_invalid_clarification_period_is_not_kept_as_visit_context(): void
