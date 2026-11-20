@@ -22,7 +22,7 @@ class AssistantScopeAuditServiceTest extends TestCase
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
             'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
                 'type' => 'text',
-                'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter low stock by jacket yet. Want the overall list?","offer_ungrouped":true}',
+                'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter low stock by jacket yet. Want the overall list?","offer_ungrouped":true,"language":"en"}',
             ]]]],
         ])]);
 
@@ -31,7 +31,7 @@ class AssistantScopeAuditServiceTest extends TestCase
             'Top ten low-stock products across all categories. No category filter.', null,
         );
 
-        $this->assertSame(['covered' => false, 'unavailable' => false, 'message' => 'I cannot filter low stock by jacket yet. Want the overall list?', 'uncovered' => 'jacket category', 'offer_ungrouped' => true], $result);
+        $this->assertSame(['covered' => false, 'unavailable' => false, 'message' => 'I cannot filter low stock by jacket yet. Want the overall list?', 'uncovered' => 'jacket category', 'offer_ungrouped' => true, 'language' => 'en'], $result);
         Http::assertSentCount(1);
         Http::assertSent(fn (Request $request): bool => $request['store'] === false
             && str_contains($request['input'], 'jacket category')
@@ -44,7 +44,7 @@ class AssistantScopeAuditServiceTest extends TestCase
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
             'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
                 'type' => 'text',
-                'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}',
+                'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}',
             ]]]],
         ])]);
 
@@ -62,7 +62,7 @@ class AssistantScopeAuditServiceTest extends TestCase
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
                 'type' => 'text',
-                'text' => '{"covered":false,"uncovered":"customer Ana","clarification":"Ask without a customer name.","offer_ungrouped":false}',
+                'text' => '{"covered":false,"uncovered":"customer Ana","clarification":"Ask without a customer name.","offer_ungrouped":false,"language":"en"}',
             ]]]]])
             ->push(['error' => ['message' => 'Synthetic failure']], 503);
         $service = app(AssistantScopeAuditService::class);

@@ -90,6 +90,8 @@ class AssistantController extends Controller
                     ? ['period' => $result['visit_context']['period'] ?? null] : []),
                 ...($result['visit_context']['pending'] === 'offered_tool'
                     ? ['offer' => $result['visit_context']['offer'] ?? null] : []),
+                ...(in_array($result['visit_context']['reply_language'] ?? null, ['en', 'ceb', 'mixed'], true)
+                    ? ['reply_language' => $result['visit_context']['reply_language']] : []),
             ], now()->addMinutes(20));
         } elseif (($result['status'] === 'social' || ($result['visit_context']['social'] ?? false))
             && in_array($trustedVisitContext['intent'] ?? null, [
@@ -109,6 +111,8 @@ class AssistantController extends Controller
                 'pending' => $trustedVisitContext['pending'],
                 ...($trustedVisitContext['pending'] === 'store_goal'
                     ? ['period' => $trustedVisitContext['period'] ?? null] : []),
+                ...(in_array($trustedVisitContext['reply_language'] ?? null, ['en', 'ceb', 'mixed'], true)
+                    ? ['reply_language' => $trustedVisitContext['reply_language']] : []),
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'general_chat' && ($result['visit_context']['chat_topic'] ?? null) === 'thrift') {
             $request->session()->cache()->put('assistant.visit_context', [

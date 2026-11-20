@@ -206,12 +206,12 @@ class AssistantAgenticTurnServiceTest extends TestCase
         config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'running low']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot narrow low stock to jackets. Want the overall list?","offer_ungrouped":true}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot narrow low stock to jackets. Want the overall list?","offer_ungrouped":true,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('What is running low in the jacket category?', routingOnly: true);
 
         $this->assertSame('clarification', $result['status']);
-        $this->assertSame(['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []]], $result['visit_context']);
+        $this->assertSame(['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []], 'reply_language' => 'en'], $result['visit_context']);
         Http::assertSentCount(2);
     }
 
@@ -220,7 +220,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
         config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales this month', routingOnly: true);
 
@@ -233,12 +233,12 @@ class AssistantAgenticTurnServiceTest extends TestCase
         config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"Would you like me to filter the low stock items by tops?","offer_ungrouped":false}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"Would you like me to filter the low stock items by tops?","offer_ungrouped":false,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Which tops are almost sold out?', routingOnly: true);
 
         $this->assertSame('clarification', $result['status']);
-        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'en'], $result['visit_context']);
         $this->assertSame('I cannot verify “tops” with this store summary. Please restate the full question for an overall view.', $result['message']);
         $this->assertStringNotContainsString('Would you like me to filter', $result['message']);
         Http::assertSentCount(2);
@@ -249,7 +249,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
         config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer(
             'Show me total sales for this month, please.',
@@ -260,6 +260,24 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
         Http::assertSent(fn (Request $request): bool => is_string($request['input'])
             && str_contains($request['input'], '"trusted_pending_offer":null'));
+    }
+
+    public function test_a_short_ambiguous_follow_up_uses_the_validated_previous_reply_language(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
+                'type' => 'text', 'text' => '{"kind":"clarification","reply":"Please restate the full store question.","pending":"scope_goal"}',
+            ]]]],
+        ])]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer(
+            'Yes, please', visitContext: ['pending' => 'scope_goal', 'reply_language' => 'en'], routingOnly: true,
+        );
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'en'], $result['visit_context']);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'previous clarification was in English')
+            && str_contains($request['input'][0]['content'][0]['text'], '"pending_reply_language":"en"'));
     }
 
     public function test_private_credential_is_blocked_before_a_provider_call(): void

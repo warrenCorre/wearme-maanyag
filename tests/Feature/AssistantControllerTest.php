@@ -111,9 +111,9 @@ class AssistantControllerTest extends TestCase
         Http::preventStrayRequests();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'running low']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter by jacket yet. Want the overall low-stock list?","offer_ungrouped":true}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter by jacket yet. Want the overall low-stock list?","offer_ungrouped":true,"language":"en"}']]]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => '']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'What is running low in the jacket category?'])
@@ -140,9 +140,9 @@ class AssistantControllerTest extends TestCase
         Http::preventStrayRequests();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops. Could you restate a supported request?","offer_ungrouped":false}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops. Could you restate a supported request?","offer_ungrouped":false,"language":"en"}']]]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'inventory']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'Which tops are almost sold out?'])
@@ -155,6 +155,29 @@ class AssistantControllerTest extends TestCase
         Http::assertSentCount(4);
         Http::assertSent(fn (Request $request): bool => is_array($request['input'])
             && str_contains($request['input'][0]['content'][0]['text'] ?? '', '"pending_clarification":"scope_goal"'));
+    }
+
+    public function test_agentic_short_follow_up_keeps_the_previous_clarification_language(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops.","offer_ungrouped":false,"language":"en"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Please restate the full store question.","pending":"scope_goal"}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Which tops are almost sold out?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'clarification');
+
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'] ?? '', 'previous clarification was in English'));
     }
 
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void

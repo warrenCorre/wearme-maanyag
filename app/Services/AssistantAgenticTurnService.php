@@ -53,7 +53,7 @@ class AssistantAgenticTurnService
         }
 
         $turn = $screen['text'];
-        $systemInstruction = self::SYSTEM_INSTRUCTION.$this->replyLanguageInstruction($turn);
+        $systemInstruction = self::SYSTEM_INSTRUCTION.$this->replyLanguageInstruction($turn, $visitContext);
         $offer = $this->trustedOffer($visitContext);
         $input = [[
             'type' => 'user_input',
@@ -62,6 +62,7 @@ class AssistantAgenticTurnService
                 'previous_store_topic' => $this->trustedTopic($visitContext),
                 'pending_clarification' => $offer !== null ? 'offered_tool' : $this->trustedPending($visitContext),
                 'pending_clarification_period' => $this->trustedPeriod($visitContext),
+                'pending_reply_language' => $this->trustedReplyLanguage($visitContext),
                 'pending_offer' => $offer,
                 'private_qualifier_removed' => $screen['status'] === 'redacted',
                 'current_screened_turn' => $turn,
@@ -148,8 +149,8 @@ class AssistantAgenticTurnService
                         'message' => $offered !== null ? $audit['message']
                             : 'I cannot verify “'.$audit['uncovered'].'” with this store summary. Please restate the full question for an overall view.',
                         'visit_context' => $offered !== null
-                            ? ['pending' => 'offered_tool', 'offer' => $offered]
-                            : ['pending' => 'scope_goal'],
+                            ? ['pending' => 'offered_tool', 'offer' => $offered, 'reply_language' => $audit['language']]
+                            : ['pending' => 'scope_goal', 'reply_language' => $audit['language']],
                     ];
                 }
             }
@@ -184,7 +185,7 @@ class AssistantAgenticTurnService
             return $this->phraseVerifiedResult($input, $steps, $tools, $name, $id, $executed);
         }
 
-        return $this->directReply($steps, $history, $turn, $routingOnly);
+        return $this->directReply($steps, $history, $turn, $routingOnly, $visitContext);
     }
 
     /** @param list<array<string, mixed>> $input
@@ -262,9 +263,10 @@ class AssistantAgenticTurnService
 
     /** @param list<array<string, mixed>> $steps
      * @param  list<array{turn: string, reply: string}>  $history
+     * @param  array<string, mixed>|null  $visitContext
      * @return array<string, mixed>
      */
-    private function directReply(array $steps, array $history, string $turn, bool $routingOnly): array
+    private function directReply(array $steps, array $history, string $turn, bool $routingOnly, ?array $visitContext): array
     {
         $reply = $this->parseDirectReply($steps);
 
@@ -273,7 +275,14 @@ class AssistantAgenticTurnService
         }
 
         if ($reply['kind'] === 'clarification') {
-            return ['status' => 'clarification', 'message' => $reply['reply'], 'visit_context' => $this->clarificationContext($reply)];
+            $context = $this->clarificationContext($reply);
+            $previousLanguage = $this->trustedReplyLanguage($visitContext);
+
+            if ($previousLanguage !== null && $this->replyLanguageInstruction($turn, null) === '') {
+                $context['reply_language'] = $previousLanguage;
+            }
+
+            return ['status' => 'clarification', 'message' => $reply['reply'], 'visit_context' => $context];
         }
 
         if ($reply['kind'] === 'refusal') {
@@ -362,7 +371,8 @@ class AssistantAgenticTurnService
         return trim(implode("\n", $parts));
     }
 
-    private function replyLanguageInstruction(string $turn): string
+    /** @param array<string, mixed>|null $visitContext */
+    private function replyLanguageInstruction(string $turn, ?array $visitContext): string
     {
         $words = preg_split('/[^\pL]+/u', mb_strtolower($turn), -1, PREG_SPLIT_NO_EMPTY);
 
@@ -383,7 +393,20 @@ class AssistantAgenticTurnService
             return "\nThe current Owner turn is in Cebuano. Reply in Cebuano, including any clarification after an invalid function call.";
         }
 
-        return '';
+        return match ($this->trustedReplyLanguage($visitContext)) {
+            'en' => "\nThe current turn gives no clear language cue. The previous clarification was in English; continue in English.",
+            'ceb' => "\nThe current turn gives no clear language cue. The previous clarification was in Cebuano; continue in Cebuano.",
+            'mixed' => "\nThe current turn gives no clear language cue. Continue in the previous clarification's mixed language style.",
+            default => '',
+        };
+    }
+
+    /** @param array<string, mixed>|null $context */
+    private function trustedReplyLanguage(?array $context): ?string
+    {
+        $language = $context['reply_language'] ?? null;
+
+        return in_array($language, ['en', 'ceb', 'mixed'], true) ? $language : null;
     }
 
     /** @param array<string, mixed>|null $context */

@@ -17,12 +17,13 @@ class AssistantScopeAuditService
             'uncovered' => ['type' => 'string'],
             'clarification' => ['type' => 'string'],
             'offer_ungrouped' => ['type' => 'boolean'],
+            'language' => ['type' => 'string', 'enum' => ['en', 'ceb', 'mixed']],
         ],
-        'required' => ['covered', 'uncovered', 'clarification', 'offer_ungrouped'],
+        'required' => ['covered', 'uncovered', 'clarification', 'offer_ungrouped', 'language'],
     ];
 
     private const INSTRUCTION = <<<'INSTRUCTION'
-        You are Maanyag's separate request-coverage auditor. Another model selected a read-only tool; do not trust its choice. Compare the Owner's current screened turn and any trusted pending offer with the exact tool description and arguments. Would executing this exact call fully answer every material qualifier, including category, person, grouping, metric, period, comparison, exclusion and requested output type? Never silently drop one. A brief acceptance is covered only when it clearly accepts the matching trusted offer. If covered, return covered=true and empty strings for uncovered and clarification, with offer_ungrouped=false. Otherwise return covered=false, an exact short quote of the unsupported or ambiguous part, and one short natural clarification in the Owner's current language. Set offer_ungrouped=true only if the reply explicitly asks whether the Owner wants this same public aggregate without its unsupported filter; do not offer a different period, private detail or write. Never claim a store fact or figure. Return only the required JSON fields.
+        You are Maanyag's separate request-coverage auditor. Another model selected a read-only tool; do not trust its choice. Compare the Owner's current screened turn and any trusted pending offer with the exact tool description and arguments. Would executing this exact call fully answer every material qualifier, including category, person, grouping, metric, period, comparison, exclusion and requested output type? Never silently drop one. A brief acceptance is covered only when it clearly accepts the matching trusted offer. Set language=en for a clearly English current turn, ceb for clearly Cebuano, or mixed otherwise. If covered, return covered=true and empty strings for uncovered and clarification, with offer_ungrouped=false. Otherwise return covered=false, an exact short quote of the unsupported or ambiguous part, and one short natural clarification in the Owner's current language. Set offer_ungrouped=true only if the reply explicitly asks whether the Owner wants this same public aggregate without its unsupported filter; do not offer a different period, private detail or write. Never claim a store fact or figure. Return only the required JSON fields.
         INSTRUCTION;
 
     public function __construct(
@@ -32,7 +33,7 @@ class AssistantScopeAuditService
 
     /** @param array<string, string> $arguments
      * @param  array{tool: string, arguments: array<string, string>}|null  $trustedOffer
-     * @return array{covered: bool, unavailable: bool, message: ?string, uncovered: string, offer_ungrouped: bool}
+     * @return array{covered: bool, unavailable: bool, message: ?string, uncovered: string, offer_ungrouped: bool, language: ?string}
      */
     public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer): array
     {
@@ -50,17 +51,18 @@ class AssistantScopeAuditService
             return $this->unavailable();
         }
 
-        if (! is_array($decoded) || count($decoded) !== 4
+        if (! is_array($decoded) || count($decoded) !== 5
             || ! is_bool($decoded['covered'] ?? null)
             || ! is_string($decoded['uncovered'] ?? null)
             || ! is_string($decoded['clarification'] ?? null)
-            || ! is_bool($decoded['offer_ungrouped'] ?? null)) {
+            || ! is_bool($decoded['offer_ungrouped'] ?? null)
+            || ! in_array($decoded['language'] ?? null, ['en', 'ceb', 'mixed'], true)) {
             return $this->unavailable();
         }
 
         if ($decoded['covered']) {
             return $decoded['uncovered'] === '' && $decoded['clarification'] === '' && ! $decoded['offer_ungrouped']
-                ? ['covered' => true, 'unavailable' => false, 'message' => null, 'uncovered' => '', 'offer_ungrouped' => false]
+                ? ['covered' => true, 'unavailable' => false, 'message' => null, 'uncovered' => '', 'offer_ungrouped' => false, 'language' => $decoded['language']]
                 : $this->unavailable();
         }
 
@@ -72,10 +74,10 @@ class AssistantScopeAuditService
             return $this->unavailable();
         }
 
-        return ['covered' => false, 'unavailable' => false, 'message' => $clarification, 'uncovered' => $uncovered, 'offer_ungrouped' => $decoded['offer_ungrouped']];
+        return ['covered' => false, 'unavailable' => false, 'message' => $clarification, 'uncovered' => $uncovered, 'offer_ungrouped' => $decoded['offer_ungrouped'], 'language' => $decoded['language']];
     }
 
-    /** @return array{covered: false, unavailable: true, message: string, uncovered: string, offer_ungrouped: false} */
+    /** @return array{covered: false, unavailable: true, message: string, uncovered: string, offer_ungrouped: false, language: null} */
     private function unavailable(): array
     {
         return [
@@ -84,6 +86,7 @@ class AssistantScopeAuditService
             'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
             'uncovered' => '',
             'offer_ungrouped' => false,
+            'language' => null,
         ];
     }
 }
