@@ -23,6 +23,7 @@ class AssistantAgenticTurnService
     public function __construct(
         private AssistantPrivacyFilter $privacyFilter,
         private AssistantToolRegistry $toolRegistry,
+        private AssistantScopeAuditService $scopeAuditService,
         private GeminiClient $geminiClient,
         private AssistantResponseValidator $responseValidator,
     ) {}
@@ -113,6 +114,42 @@ class AssistantAgenticTurnService
 
             if (! $validation['valid']) {
                 return $this->explainInvalidCall($input, $steps, $tools, $name, $id, $arguments, $validation['reason'], $systemInstruction);
+            }
+
+            if (config('assistant.agentic_scope_audit', true)) {
+                $description = null;
+
+                foreach ($tools as $tool) {
+                    if (($tool['name'] ?? null) === $name) {
+                        $description = $tool['description'] ?? null;
+
+                        break;
+                    }
+                }
+
+                if (! is_string($description)) {
+                    return ['status' => 'unavailable', 'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE];
+                }
+
+                $matchingOffer = $offer !== null && $offer['tool'] === $name && $offer['arguments'] == $arguments
+                    ? $offer : null;
+                $audit = $this->scopeAuditService->audit($turn, $name, $arguments, $description, $matchingOffer);
+
+                if ($audit['unavailable']) {
+                    return ['status' => 'unavailable', 'message' => $audit['message']];
+                }
+
+                if (! $audit['covered']) {
+                    $offered = $audit['offer_ungrouped'] && ! $validation['local_only']
+                        ? $this->validatedOffer(['tool' => $name, 'arguments' => $arguments]) : null;
+
+                    return [
+                        'status' => 'clarification', 'message' => $audit['message'],
+                        'visit_context' => $offered !== null
+                            ? ['pending' => 'offered_tool', 'offer' => $offered]
+                            : ['pending' => 'store_goal'],
+                    ];
+                }
             }
 
             if ($name === 'latest_unpaid_sale' && $this->trustedPending($visitContext) !== 'latest_pending_sale_confirmation') {

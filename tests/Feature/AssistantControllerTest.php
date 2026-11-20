@@ -26,7 +26,7 @@ class AssistantControllerTest extends TestCase
     public function test_flagged_agentic_owner_can_chat_then_get_a_locally_verified_store_answer(): void
     {
         config([
-            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
             'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
             'services.gemini.api_key' => 'fictional-key',
         ]);
@@ -52,7 +52,7 @@ class AssistantControllerTest extends TestCase
     public function test_agentic_clarification_keeps_the_explicit_period_across_http_turns(): void
     {
         config([
-            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
             'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
             'services.gemini.api_key' => 'fictional-key',
         ]);
@@ -77,7 +77,7 @@ class AssistantControllerTest extends TestCase
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-18 10:00:00', 'Asia/Manila'));
         config([
-            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
             'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
             'services.gemini.api_key' => 'fictional-key',
         ]);
@@ -98,6 +98,35 @@ class AssistantControllerTest extends TestCase
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_offer":{"tool":"sales_summary"')
             && ! str_contains(json_encode($request->data()), 'total_sales'));
+    }
+
+    public function test_agentic_scope_audit_keeps_a_filtered_request_off_the_fact_path_until_the_owner_accepts(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'running low']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter by jacket yet. Want the overall low-stock list?","offer_ungrouped":true}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => '']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'What is running low in the jacket category?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory');
+
+        Http::assertSentCount(4);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'])
+            && str_contains($request['input'], '"trusted_pending_offer":{"tool":"low_stock"'));
     }
 
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void

@@ -23,6 +23,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
             'services.gemini.allow_conversation' => true,
             'services.gemini.allow_store_data' => true,
             'assistant.send_store_results_to_gemini' => false,
+            'assistant.agentic_scope_audit' => false,
         ]);
         $this->actingAs(User::query()->create([
             'name' => 'Synthetic Owner', 'email' => 'owner@example.test', 'password' => 'synthetic-password',
@@ -198,6 +199,51 @@ class AssistantAgenticTurnServiceTest extends TestCase
 
         $this->assertSame('clarification', $result['status']);
         $this->assertSame(['pending' => 'store_goal'], $result['visit_context']);
+    }
+
+    public function test_scope_audit_rejects_a_category_qualifier_dropped_by_a_valid_tool_call(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'running low']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot narrow low stock to jackets. Want the overall list?","offer_ungrouped":true}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('What is running low in the jacket category?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []]], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_scope_audit_accepts_a_complete_sales_tool_call(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales this month', routingOnly: true);
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_scope_audit_ignores_an_old_offer_when_the_owner_explicitly_switches_store_topics(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer(
+            'Show me total sales for this month, please.',
+            visitContext: ['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []]],
+            routingOnly: true,
+        );
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'])
+            && str_contains($request['input'], '"trusted_pending_offer":null'));
     }
 
     public function test_private_credential_is_blocked_before_a_provider_call(): void
