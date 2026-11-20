@@ -20,6 +20,9 @@ class AssistantToolRegistryTest extends TestCase
 
         $this->assertContains('sales_summary', array_column($declarations, 'name'));
         $this->assertContains('latest_unpaid_sale', array_column($declarations, 'name'));
+        $salesDeclaration = collect($declarations)->firstWhere('name', 'sales_summary');
+        $this->assertSame(['period', 'metric_evidence', 'period_evidence'], $salesDeclaration['parameters']['required']);
+        $this->assertSame('string', $salesDeclaration['parameters']['properties']['metric_evidence']['type']);
         $this->assertTrue($registry->validate('sales_summary', ['period' => 'yesterday'])['valid']);
         $this->assertSame('unsupported_scope', $registry->validate('sales_summary', ['period' => 'yesterday', 'customer' => 'Fictional'])['reason']);
         $this->assertSame('unsupported_scope', $registry->validate('sales_summary', [])['reason']);

@@ -342,6 +342,14 @@ class AssistantAnswerService
             }
         }
 
+        if (! config('assistant.send_store_results_to_gemini', false)
+            || ! config('assistant.paid_tier_reviewed', false)) {
+            return $this->verifiedFallback->answer($decision, $relevantContext, $allowedSources) ?? [
+                'status' => 'unavailable',
+                'message' => 'Sorry, I cannot verify those store records right now. Please try again in a moment.',
+            ];
+        }
+
         $relevantContext['allowed_sources'] = $allowedSources;
         $prompt = $this->promptBuilder->build($decision['safe_question'] ?? '', $relevantContext);
 

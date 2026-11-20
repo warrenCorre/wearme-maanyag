@@ -26,14 +26,14 @@ class AssistantControllerTest extends TestCase
     public function test_flagged_agentic_owner_can_chat_then_get_a_locally_verified_store_answer(): void
     {
         config([
-            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false,
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
             'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
             'services.gemini.api_key' => 'fictional-key',
         ]);
         Http::preventStrayRequests();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hey, I am here."}']]]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => (object) []]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'stock']]]]);
         $this->actingAs($this->createUser('store_owner'));
 
         $this->postJson(route('assistant.ask'), ['question' => 'Hey Maanyag'])
@@ -47,6 +47,137 @@ class AssistantControllerTest extends TestCase
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains(json_encode($request['input']), 'Hey Maanyag')
             && ! str_contains(json_encode($request->data()), 'stock_value'));
+    }
+
+    public function test_agentic_clarification_keeps_the_explicit_period_across_http_turns(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area would you like for last month?","pending":"store_goal","period":"last_month"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'How did we do last month?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Sales, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_clarification_period":"last_month"'));
+    }
+
+    public function test_agentic_public_aggregate_offer_survives_one_owner_follow_up_without_leaking_context(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-18 10:00:00', 'Asia/Manila'));
+        config([
+            'assistant.mode' => 'agentic', 'assistant.send_store_results_to_gemini' => false, 'assistant.agentic_scope_audit' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I can show total sales this month instead. Want that?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"this_month"}}}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => '', 'period_evidence' => '']]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Show sales by cashier this month?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertJsonMissingPath('result.visit_context');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_offer":{"tool":"sales_summary"')
+            && ! str_contains(json_encode($request->data()), 'total_sales'));
+    }
+
+    public function test_agentic_scope_audit_keeps_a_filtered_request_off_the_fact_path_until_the_owner_accepts(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'running low']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket category","clarification":"I cannot filter by jacket yet. Want the overall low-stock list?","offer_ungrouped":true,"language":"en"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => '']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'What is running low in the jacket category?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources')
+            ->assertJsonMissingPath('result.visit_context');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory');
+
+        Http::assertSentCount(4);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'])
+            && str_contains($request['input'], '"trusted_pending_offer":{"tool":"low_stock"'));
+    }
+
+    public function test_agentic_unsupported_scope_without_an_offer_survives_to_the_next_turn(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops. Could you restate a supported request?","offer_ungrouped":false,"language":"en"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'inventory']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Which tops are almost sold out?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'Show overall inventory'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory');
+
+        Http::assertSentCount(4);
+        Http::assertSent(fn (Request $request): bool => is_array($request['input'])
+            && str_contains($request['input'][0]['content'][0]['text'] ?? '', '"pending_clarification":"scope_goal"'));
+    }
+
+    public function test_agentic_short_follow_up_keeps_the_previous_clarification_language(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops.","offer_ungrouped":false,"language":"en"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Please restate the full store question.","pending":"scope_goal"}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Which tops are almost sold out?'])
+            ->assertJsonPath('result.status', 'clarification');
+        $this->postJson(route('assistant.ask'), ['question' => 'Yes, please'])
+            ->assertJsonPath('result.status', 'clarification');
+
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'] ?? '', 'previous clarification was in English'));
     }
 
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
@@ -193,7 +324,7 @@ class AssistantControllerTest extends TestCase
             ->assertJsonPath('result.sources.0.label', 'Sales summary');
         $this->postJson(route('assistant.ask'), ['question' => 'Could you show the previous month too?'])
             ->assertJsonPath('result.status', 'answered')
-            ->assertSee('monthly sales for 2026-10-16');
+            ->assertSee('sales for October 2026');
         $this->postJson(route('assistant.ask'), ['question' => 'What about inventory?'])
             ->assertJsonPath('result.status', 'answered')
             ->assertJsonPath('result.sources.0.label', 'Inventory summary')
@@ -488,7 +619,33 @@ class AssistantControllerTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
-        config(['services.gemini.allow_conversation' => false]);
+        config([
+            'services.gemini.allow_conversation' => false,
+            'assistant.send_store_results_to_gemini' => true,
+            'assistant.paid_tier_reviewed' => true,
+        ]);
+    }
+
+    public function test_owner_sees_local_legacy_sales_without_sending_store_results_on_the_free_tier(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-18 12:00:00', 'Asia/Manila'));
+        config([
+            'assistant.mode' => 'legacy',
+            'assistant.send_store_results_to_gemini' => false,
+            'assistant.paid_tier_reviewed' => false,
+            'services.gemini.allow_store_data' => true,
+        ]);
+        $this->mock(GeminiClient::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('generateText');
+        });
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Show me sales for this month?'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'sales')
+            ->assertSee('Recorded sales for November 2026');
+
+        Http::assertNothingSent();
     }
 
     public function test_first_joke_and_follow_up_use_only_a_visit_topic_then_new_chat_starts_a_fresh_joke(): void
@@ -1002,7 +1159,7 @@ class AssistantControllerTest extends TestCase
 
         $this->actingAs($owner)->postJson(route('assistant.ask'), ['question' => 'Show me sales for this year'])
             ->assertJsonPath('result.status', 'answered')
-            ->assertJsonPath('result.message', 'Recorded yearly sales for 2026-11-15: 0 transactions totaling PHP 0.00.')
+            ->assertJsonPath('result.message', 'Recorded sales for 2026: 0 transactions totaling PHP 0.00.')
             ->assertJsonPath('result.sources.0.type', 'sales')
             ->assertJsonPath('result.sources.0.as_of', '2026-11-15')
             ->assertJsonMissingPath('result.visit_context');
@@ -1335,7 +1492,7 @@ class AssistantControllerTest extends TestCase
         $response->assertSee('Before enabling conversation sharing: screened, non-identifying store questions may be sent to Gemini only to choose an approved skill.');
         $response->assertSee('Brief casual replies can reach Gemini as typed after basic privacy checks.');
         $response->assertSee('Free-text screening can miss a private detail, including a lowercase name.');
-        $response->assertSee('Store-data sharing requires separate approval; Gemini cannot directly access the database.');
+        $response->assertSee('Store-data sharing requires separate approval; retrieved store results stay on this system on the free tier. Gemini cannot directly access the database.');
         $response->assertSee('New Chat, returning here, or logout clears them; they also expire after 20 minutes of inactivity. No permanent chat archive.');
         $response->assertDontSee('chats are not saved');
         $response->assertSee('Greetings and brief chat still work with a local fallback');
