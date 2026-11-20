@@ -129,6 +129,34 @@ class AssistantControllerTest extends TestCase
             && str_contains($request['input'], '"trusted_pending_offer":{"tool":"low_stock"'));
     }
 
+    public function test_agentic_unsupported_scope_without_an_offer_survives_to_the_next_turn(): void
+    {
+        config([
+            'assistant.mode' => 'agentic', 'assistant.agentic_scope_audit' => true,
+            'assistant.send_store_results_to_gemini' => false,
+            'services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"I cannot filter this to tops. Could you restate a supported request?","offer_ungrouped":false}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'inventory']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false}']]]]]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Which tops are almost sold out?'])
+            ->assertJsonPath('result.status', 'clarification')
+            ->assertJsonMissingPath('result.sources');
+        $this->postJson(route('assistant.ask'), ['question' => 'Show overall inventory'])
+            ->assertJsonPath('result.status', 'answered')
+            ->assertJsonPath('result.sources.0.type', 'inventory');
+
+        Http::assertSentCount(4);
+        Http::assertSent(fn (Request $request): bool => is_array($request['input'])
+            && str_contains($request['input'][0]['content'][0]['text'] ?? '', '"pending_clarification":"scope_goal"'));
+    }
+
     public function test_owner_can_move_from_chat_to_a_sourced_recorded_activity_summary(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-16 18:00:00', 'UTC'));

@@ -81,7 +81,7 @@ class AssistantController extends Controller
                 'intent' => $result['visit_context']['intent'],
             ], now()->addMinutes(20));
         } elseif ($result['status'] === 'clarification' && in_array($result['visit_context']['pending'] ?? null, [
-            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation', 'store_goal', 'offered_tool',
+            'sales_goal', 'sales_period', 'unpaid_goal', 'latest_pending_sale_confirmation', 'store_goal', 'scope_goal', 'offered_tool',
         ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,
@@ -102,7 +102,7 @@ class AssistantController extends Controller
         } elseif (($result['status'] === 'social'
             || ($result['status'] === 'general_chat' && config('services.gemini.allow_conversation', false)))
             && in_array($trustedVisitContext['pending'] ?? null, [
-                'sales_goal', 'sales_period', 'unpaid_goal', 'store_goal',
+                'sales_goal', 'sales_period', 'unpaid_goal', 'store_goal', 'scope_goal',
             ], true)) {
             $request->session()->cache()->put('assistant.visit_context', [
                 'owner_id' => $request->user()->id,

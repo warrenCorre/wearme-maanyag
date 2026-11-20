@@ -228,6 +228,22 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_scope_audit_keeps_an_unsupported_scope_distinct_when_no_safe_offer_exists(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'almost sold out']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"tops","clarification":"Would you like me to filter the low stock items by tops?","offer_ungrouped":false}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Which tops are almost sold out?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        $this->assertSame('I cannot verify “tops” with this store summary. Please restate the full question for an overall view.', $result['message']);
+        $this->assertStringNotContainsString('Would you like me to filter', $result['message']);
+        Http::assertSentCount(2);
+    }
+
     public function test_scope_audit_ignores_an_old_offer_when_the_owner_explicitly_switches_store_topics(): void
     {
         config(['assistant.agentic_scope_audit' => true]);

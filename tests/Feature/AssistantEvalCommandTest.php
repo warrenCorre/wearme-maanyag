@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\AssistantAnswerService;
 use App\Services\AssistantContextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -93,6 +94,52 @@ class AssistantEvalCommandTest extends TestCase
 
         $this->assertSame(1, Artisan::call('assistant:eval', ['--flow' => 'agentic']));
         Http::assertNothingSent();
+    }
+
+    public function test_an_offered_aggregate_is_scored_as_a_scope_clarification(): void
+    {
+        $this->createOwner();
+        config(['services.gemini.allow_conversation' => true]);
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('answer')->once()->andReturn([
+                'status' => 'clarification',
+                'message' => 'I cannot filter low stock to jackets. Want the overall list?',
+                'visit_context' => ['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []]],
+            ]);
+        });
+
+        $exit = Artisan::call('assistant:eval', [
+            '--flow' => 'agentic', '--group' => 'filtered.phase3', '--phase' => '0',
+            '--limit' => '1', '--stub' => true, '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame(1, $report['passed']);
+        $this->assertSame([], $report['failures']);
+    }
+
+    public function test_an_unsupported_scope_without_an_offer_is_scored_as_a_scope_clarification(): void
+    {
+        $this->createOwner();
+        config(['services.gemini.allow_conversation' => true]);
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('answer')->once()->andReturn([
+                'status' => 'clarification',
+                'message' => 'I cannot filter this to tops. Could you restate a supported request?',
+                'visit_context' => ['pending' => 'scope_goal'],
+            ]);
+        });
+
+        $exit = Artisan::call('assistant:eval', [
+            '--flow' => 'agentic', '--group' => 'filtered.phase3', '--phase' => '0',
+            '--limit' => '1', '--stub' => true, '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame(1, $report['passed']);
+        $this->assertSame([], $report['failures']);
     }
 
     private function createOwner(): User

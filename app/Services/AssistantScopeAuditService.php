@@ -32,7 +32,7 @@ class AssistantScopeAuditService
 
     /** @param array<string, string> $arguments
      * @param  array{tool: string, arguments: array<string, string>}|null  $trustedOffer
-     * @return array{covered: bool, unavailable: bool, message: ?string, offer_ungrouped: bool}
+     * @return array{covered: bool, unavailable: bool, message: ?string, uncovered: string, offer_ungrouped: bool}
      */
     public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer): array
     {
@@ -60,7 +60,7 @@ class AssistantScopeAuditService
 
         if ($decoded['covered']) {
             return $decoded['uncovered'] === '' && $decoded['clarification'] === '' && ! $decoded['offer_ungrouped']
-                ? ['covered' => true, 'unavailable' => false, 'message' => null, 'offer_ungrouped' => false]
+                ? ['covered' => true, 'unavailable' => false, 'message' => null, 'uncovered' => '', 'offer_ungrouped' => false]
                 : $this->unavailable();
         }
 
@@ -72,16 +72,17 @@ class AssistantScopeAuditService
             return $this->unavailable();
         }
 
-        return ['covered' => false, 'unavailable' => false, 'message' => $clarification, 'offer_ungrouped' => $decoded['offer_ungrouped']];
+        return ['covered' => false, 'unavailable' => false, 'message' => $clarification, 'uncovered' => $uncovered, 'offer_ungrouped' => $decoded['offer_ungrouped']];
     }
 
-    /** @return array{covered: false, unavailable: true, message: string, offer_ungrouped: false} */
+    /** @return array{covered: false, unavailable: true, message: string, uncovered: string, offer_ungrouped: false} */
     private function unavailable(): array
     {
         return [
             'covered' => false,
             'unavailable' => true,
             'message' => AssistantSafeChatService::TEMPORARY_UNAVAILABLE_MESSAGE,
+            'uncovered' => '',
             'offer_ungrouped' => false,
         ];
     }

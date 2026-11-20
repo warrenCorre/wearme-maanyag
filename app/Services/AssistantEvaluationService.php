@@ -308,7 +308,7 @@ class AssistantEvaluationService
     {
         $asks = match ($pending) {
             'sales_period' => 'period',
-            'unpaid_goal', 'latest_pending_sale_confirmation' => 'scope',
+            'unpaid_goal', 'latest_pending_sale_confirmation', 'offered_tool', 'scope_goal' => 'scope',
             default => 'metric',
         };
         $retain = [];

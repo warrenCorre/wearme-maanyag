@@ -31,7 +31,7 @@ class AssistantScopeAuditServiceTest extends TestCase
             'Top ten low-stock products across all categories. No category filter.', null,
         );
 
-        $this->assertSame(['covered' => false, 'unavailable' => false, 'message' => 'I cannot filter low stock by jacket yet. Want the overall list?', 'offer_ungrouped' => true], $result);
+        $this->assertSame(['covered' => false, 'unavailable' => false, 'message' => 'I cannot filter low stock by jacket yet. Want the overall list?', 'uncovered' => 'jacket category', 'offer_ungrouped' => true], $result);
         Http::assertSentCount(1);
         Http::assertSent(fn (Request $request): bool => $request['store'] === false
             && str_contains($request['input'], 'jacket category')
