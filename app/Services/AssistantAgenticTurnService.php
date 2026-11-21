@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Category;
+use App\Models\Product;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +17,8 @@ use Throwable;
 
 class AssistantAgenticTurnService
 {
+    private const PUBLIC_CHAT_LIMIT = 40;
+
     private const TURN_BUDGET_SECONDS = 26;
 
     private const ROUTING_TIMEOUT_SECONDS = 18;
@@ -26,7 +31,7 @@ class AssistantAgenticTurnService
         A trusted pending sales_period means a previous turn already requested sales totals. If this turn supplies a supported period, call sales_summary with empty metric_evidence and an exact period_evidence quote from this turn. Never apply that shortcut to a different pending goal or an unsupported filter.
         A broad sales request could mean totals, transaction counts, best sellers or unpaid balances. If the Owner has not identified which one they want, ask the sales goal first and return pending sales_goal. Ask for a reporting period only when the Owner has selected totals or transaction counts and that period is still missing. A follow-up to sales_goal can choose any approved sales measure or switch to a different store topic.
         Write every chat reply, clarification and refusal in the language of the Owner's current turn. English-only turns need English replies; Cebuano turns need Cebuano replies; mixed Taglish turns may mix naturally. Do not copy the language of an earlier turn or of your previous reply when the current turn uses a different language. This also applies after a function error. Keep the wording varied and conversational without changing the supported scope.
-        If a requested filter is unsupported but one public aggregate tool is a useful alternative, ask whether the Owner wants that alternative. Return a clarification JSON with pending "offered_tool" and offer {"tool":"the declared function name","arguments":{...complete supported business arguments...}}. The offer must match what your reply promises; never offer an individual sale, adjustment details, or a write. When a trusted pending offer is supplied and the Owner accepts it, call only that offered function with the same arguments and empty evidence strings. If the Owner asks for something else, interpret that new request normally. Do not treat an offer as permission to retrieve private details.
+        If a requested filter is unsupported but one public aggregate tool is a useful alternative, say plainly that the filter is unavailable and ask whether the Owner wants the overall result. Never present the filtered and overall results as two available choices. The low-stock and best-seller tools do not accept a product or category filter. Return a clarification JSON with pending "offered_tool" and offer {"tool":"the declared function name","arguments":{...complete supported business arguments...}}. The offer must match what your reply promises; never offer an individual sale, adjustment details, or a write. When a trusted pending offer is supplied and the Owner accepts it, call only that offered function with the same arguments and empty evidence strings. If the Owner asks for something else, interpret that new request normally. Do not treat an offer as permission to retrieve private details.
         INSTRUCTION;
 
     public function __construct(
@@ -59,9 +64,6 @@ class AssistantAgenticTurnService
         }
 
         $history = $this->screenedHistory($visitContext['chat_history'] ?? []);
-        if (count($history) >= 40) {
-            return ['status' => 'general_chat', 'message' => 'This chat has reached its 40-exchange public memory limit. Start a New Chat to keep chatting.', 'visit_context' => ['chat_topic' => 'thrift', 'chat_history' => $history]];
-        }
 
         $turn = $screen['text'];
         $systemInstruction = self::SYSTEM_INSTRUCTION.$this->replyLanguageInstruction($turn, $visitContext);
@@ -69,7 +71,7 @@ class AssistantAgenticTurnService
         $input = [[
             'type' => 'user_input',
             'content' => [['type' => 'text', 'text' => json_encode([
-                'screened_public_chat_history' => $history,
+                'screened_public_chat_history' => count($history) < self::PUBLIC_CHAT_LIMIT ? $history : [],
                 'previous_store_topic' => $this->trustedTopic($visitContext),
                 'pending_clarification' => $offer !== null ? 'offered_tool' : $this->trustedPending($visitContext),
                 'pending_clarification_period' => $this->trustedPeriod($visitContext),
@@ -155,6 +157,18 @@ class AssistantAgenticTurnService
 
                 $matchingOffer = $offer !== null && $offer['tool'] === $name && $offer['arguments'] == $arguments
                     ? $offer : null;
+                $catalogQualifier = in_array($name, ['low_stock', 'best_sellers'], true) && $matchingOffer === null
+                    ? $this->catalogQualifier($turn, $description) : null;
+                if ($catalogQualifier !== null) {
+                    $replyLanguage = $this->currentReplyLanguage($turn);
+
+                    return [
+                        'status' => 'clarification',
+                        'message' => $this->unsupportedScopeMessage($catalogQualifier, $replyLanguage),
+                        'visit_context' => ['pending' => 'scope_goal', 'reply_language' => $replyLanguage],
+                    ];
+                }
+
                 $pendingSalesPeriod = $name === 'sales_summary' && $this->trustedPending($visitContext) === 'sales_period'
                     ? 'sales_period' : null;
                 $previousSalesMeasure = $name === 'sales_summary' && trim($suppliedArguments['metric_evidence']) === ''
@@ -168,14 +182,15 @@ class AssistantAgenticTurnService
                 if (! $audit['covered']) {
                     $offered = $audit['offer_ungrouped'] && ! $validation['local_only']
                         ? $this->validatedOffer(['tool' => $name, 'arguments' => $arguments]) : null;
+                    $replyLanguage = $this->currentReplyLanguage($turn) ?? $audit['language'];
 
                     return [
                         'status' => 'clarification',
                         'message' => $offered !== null ? $audit['message']
-                            : 'I cannot verify “'.$audit['uncovered'].'” with this store summary. Please restate the full question for an overall view.',
+                            : $this->unsupportedScopeMessage($audit['uncovered'], $replyLanguage),
                         'visit_context' => $offered !== null
                             ? ['pending' => 'offered_tool', 'offer' => $offered, 'reply_language' => $audit['language']]
-                            : ['pending' => 'scope_goal', 'reply_language' => $audit['language']],
+                            : ['pending' => 'scope_goal', 'reply_language' => $replyLanguage],
                     ];
                 }
             }
@@ -327,6 +342,10 @@ class AssistantAgenticTurnService
             return ['status' => 'declined', 'message' => $reply['reply']];
         }
 
+        if (count($history) >= self::PUBLIC_CHAT_LIMIT) {
+            return ['status' => 'general_chat', 'message' => 'This chat has reached its 40-exchange public memory limit. Start a New Chat to keep chatting.', 'visit_context' => ['chat_topic' => 'thrift', 'chat_history' => $history]];
+        }
+
         if ($routingOnly) {
             return ['status' => 'evaluation', 'message' => '', 'evaluation' => ['intent' => 'general_chat'], 'visit_context' => ['chat_topic' => 'thrift']];
         }
@@ -412,32 +431,84 @@ class AssistantAgenticTurnService
     /** @param array<string, mixed>|null $visitContext */
     private function replyLanguageInstruction(string $turn, ?array $visitContext): string
     {
+        return match ($this->currentReplyLanguage($turn)) {
+            'en' => "\nThe current Owner turn is in English. Reply in English only, including any clarification after an invalid function call.",
+            'ceb' => "\nThe current Owner turn is in Cebuano. Reply in Cebuano, including any clarification after an invalid function call.",
+            default => match ($this->trustedReplyLanguage($visitContext)) {
+                'en' => "\nThe current turn gives no clear language cue. The previous clarification was in English; continue in English.",
+                'ceb' => "\nThe current turn gives no clear language cue. The previous clarification was in Cebuano; continue in Cebuano.",
+                'mixed' => "\nThe current turn gives no clear language cue. Continue in the previous clarification's mixed language style.",
+                default => '',
+            },
+        };
+    }
+
+    private function currentReplyLanguage(string $turn): ?string
+    {
         $words = preg_split('/[^\pL]+/u', mb_strtolower($turn), -1, PREG_SPLIT_NO_EMPTY);
 
         if ($words === false) {
-            return '';
+            return null;
         }
 
         $englishWords = ['can', 'could', 'did', 'do', 'does', 'give', 'how', 'is', 'me', 'our', 'please', 'show', 'the', 'we', 'what', 'when', 'where', 'which', 'would', 'you'];
-        $cebuanoWords = ['ato', 'atong', 'ba', 'bulan', 'imong', 'inyong', 'karon', 'karong', 'ko', 'kumusta', 'man', 'nato', 'niaging', 'ninyo', 'pila', 'sa', 'ta', 'tindahan', 'ug', 'unsa', 'unsay'];
+        $cebuanoWords = ['ato', 'atong', 'ba', 'bulan', 'imong', 'inyong', 'karon', 'karong', 'ko', 'kumusta', 'man', 'nato', 'nga', 'niaging', 'ninyo', 'palihog', 'pila', 'sa', 'ta', 'tindahan', 'ug', 'unsa', 'unsay'];
         $tagalogWords = ['akin', 'ang', 'ito', 'mga', 'natin', 'ng', 'niyo', 'po'];
         $englishCount = count(array_intersect($words, $englishWords));
         $cebuanoCount = count(array_intersect($words, $cebuanoWords));
 
         if ($englishCount >= 2 && $cebuanoCount === 0 && array_intersect($words, $tagalogWords) === []) {
-            return "\nThe current Owner turn is in English. Reply in English only, including any clarification after an invalid function call.";
+            return 'en';
         }
 
         if ($cebuanoCount >= 2 && $englishCount === 0) {
-            return "\nThe current Owner turn is in Cebuano. Reply in Cebuano, including any clarification after an invalid function call.";
+            return 'ceb';
         }
 
-        return match ($this->trustedReplyLanguage($visitContext)) {
-            'en' => "\nThe current turn gives no clear language cue. The previous clarification was in English; continue in English.",
-            'ceb' => "\nThe current turn gives no clear language cue. The previous clarification was in Cebuano; continue in Cebuano.",
-            'mixed' => "\nThe current turn gives no clear language cue. Continue in the previous clarification's mixed language style.",
-            default => '',
-        };
+        return null;
+    }
+
+    private function unsupportedScopeMessage(string $uncovered, ?string $language): string
+    {
+        return $language === 'ceb'
+            ? 'Dili nako maapil ang “'.$uncovered.'” sa kinatibuk-ang report. Pwede nimo usbon ang tibuok pangutana para sa kinatibuk-ang resulta?'
+            : 'I cannot verify “'.$uncovered.'” with this store summary. Please restate the full question for an overall view.';
+    }
+
+    private function catalogQualifier(string $turn, string $toolDescription): ?string
+    {
+        $turnWords = preg_split('/[^\pL\pN]+/u', mb_strtolower($turn), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $toolWords = preg_split('/[^\pL\pN]+/u', mb_strtolower($toolDescription), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $candidates = array_values(array_unique(array_filter($turnWords, fn (string $word): bool => mb_strlen($word) >= 4 && ! in_array($word, $toolWords, true))));
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        $matchingNames = [
+            ...Product::query()->where('status', 'active')->where(function (Builder $query) use ($candidates): void {
+                foreach ($candidates as $word) {
+                    $query->orWhere('product_name', 'like', '%'.$word.'%');
+                }
+            })->pluck('product_name'),
+            ...Category::query()->where('status', 'active')->where(function (Builder $query) use ($candidates): void {
+                foreach ($candidates as $word) {
+                    $query->orWhere('category_name', 'like', '%'.$word.'%');
+                }
+            })->pluck('category_name'),
+        ];
+
+        foreach ($matchingNames as $name) {
+            $nameWords = preg_split('/[^\pL\pN]+/u', mb_strtolower($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+            foreach ($candidates as $word) {
+                if (in_array($word, $nameWords, true)) {
+                    return $word;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed>|null $context */
@@ -595,7 +666,7 @@ class AssistantAgenticTurnService
 
         $safe = [];
 
-        foreach (array_slice($history, -40) as $exchange) {
+        foreach (array_slice($history, -self::PUBLIC_CHAT_LIMIT) as $exchange) {
             if (! is_array($exchange) || ! is_string($exchange['turn'] ?? null) || ! is_string($exchange['reply'] ?? null)) {
                 continue;
             }

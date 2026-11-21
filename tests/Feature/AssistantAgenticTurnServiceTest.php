@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Category;
+use App\Models\Product;
 use App\Models\User;
 use App\Services\AssistantAgenticTurnService;
 use Carbon\CarbonImmutable;
@@ -49,6 +51,28 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => $request['store'] === false
             && $request['generation_config']['tool_choice'] === 'auto'
             && str_contains($request['input'][0]['content'][0]['text'], 'Hey there'));
+    }
+
+    public function test_store_questions_still_work_when_public_chat_history_is_full(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'inventory']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Happy to chat!"}']]]]]);
+        $history = array_fill(0, 40, ['turn' => 'Hey there', 'reply' => 'Good to see you']);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $store = $service->answer('Show me overall inventory', visitContext: ['chat_history' => $history], routingOnly: true);
+        $chat = $service->answer('Hello again', visitContext: ['chat_history' => $history]);
+
+        $this->assertSame(['tool' => 'inventory_summary', 'args' => []], $store['evaluation']);
+        $this->assertSame('general_chat', $chat['status']);
+        $this->assertStringContainsString('Start a New Chat', $chat['message']);
+        $this->assertSame($history, $chat['visit_context']['chat_history']);
+        Http::assertSentCount(2);
+        foreach (Http::recorded() as [$request]) {
+            $input = json_decode($request['input'][0]['content'][0]['text'], true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame([], $input['screened_public_chat_history']);
+        }
     }
 
     public function test_provider_failure_logs_only_stage_status_type_and_latency(): void
@@ -324,6 +348,47 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('I cannot verify “tops” with this store summary. Please restate the full question for an overall view.', $result['message']);
         $this->assertStringNotContainsString('Would you like me to filter', $result['message']);
         Http::assertSentCount(2);
+    }
+
+    public function test_unsupported_scope_fallback_uses_cebuano_without_promising_the_filter(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'hapit mahurot']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket","clarification":"Would you like me to filter by jacket?","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Unsa nga jacket ang hapit mahurot?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'ceb'], $result['visit_context']);
+        $this->assertStringContainsString('Dili nako maapil ang “jacket”', $result['message']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_catalog_product_qualifier_cannot_turn_into_an_overall_low_stock_answer(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        $owner = User::query()->where('role', 'store_owner')->firstOrFail();
+        $category = Category::query()->create(['category_name' => 'Synthetic outerwear', 'status' => 'active']);
+        Product::query()->create([
+            'product_code' => 'SYN-JACKET', 'product_name' => 'Synthetic Denim Jacket',
+            'category_id' => $category->id, 'description' => 'Fictional product',
+            'price' => 10, 'quantity' => 2, 'low_stock_threshold' => 1,
+            'image' => '', 'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'low-stock']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'low-stock']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $filtered = $service->answer('Pila ka low-stock nga jacket karon sa tindahan?', routingOnly: true);
+        $overall = $service->answer('Show the overall low-stock products', routingOnly: true);
+
+        $this->assertSame('clarification', $filtered['status']);
+        $this->assertStringContainsString('Dili nako maapil ang “jacket”', $filtered['message']);
+        $this->assertSame(['tool' => 'low_stock', 'args' => []], $overall['evaluation']);
+        Http::assertSentCount(3);
     }
 
     public function test_scope_audit_ignores_an_old_offer_when_the_owner_explicitly_switches_store_topics(): void
