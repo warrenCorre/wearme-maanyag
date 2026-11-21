@@ -16,3 +16,6 @@ For every approved application change or slice, run relevant automated tests and
 
 ## Agent browser verification must be visible on the Owner’s screen
 For every required agent browser check, bring the test browser window to the foreground on the Owner’s screen and keep the affected workflow visibly displayed while testing; a background CDP tab or DOM-only inspection is not enough. Confirm the foreground view yourself and report exactly what appeared, separately from the Owner’s independent sign-off. If a visible foreground check cannot be performed, report the blocker and do not claim verification or commit an unverified application slice.
+
+## Use Conventional Commit messages
+Use `type(scope): concise description` for every new local commit. Choose a fitting type such as `feat`, `fix`, `docs`, `refactor`, `test`, or `chore`, and a meaningful scope such as `assistant` or `dashboard`; use `feat` only for a feature.

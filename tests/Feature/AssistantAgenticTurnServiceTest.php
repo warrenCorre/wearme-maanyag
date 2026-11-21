@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Category;
+use App\Models\Product;
 use App\Models\User;
 use App\Services\AssistantAgenticTurnService;
 use Carbon\CarbonImmutable;
@@ -49,6 +51,28 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => $request['store'] === false
             && $request['generation_config']['tool_choice'] === 'auto'
             && str_contains($request['input'][0]['content'][0]['text'], 'Hey there'));
+    }
+
+    public function test_store_questions_still_work_when_public_chat_history_is_full(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_inventory', 'name' => 'inventory_summary', 'arguments' => ['metric_evidence' => 'inventory']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Happy to chat!"}']]]]]);
+        $history = array_fill(0, 40, ['turn' => 'Hey there', 'reply' => 'Good to see you']);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $store = $service->answer('Show me overall inventory', visitContext: ['chat_history' => $history], routingOnly: true);
+        $chat = $service->answer('Hello again', visitContext: ['chat_history' => $history]);
+
+        $this->assertSame(['tool' => 'inventory_summary', 'args' => []], $store['evaluation']);
+        $this->assertSame('general_chat', $chat['status']);
+        $this->assertStringContainsString('Start a New Chat', $chat['message']);
+        $this->assertSame($history, $chat['visit_context']['chat_history']);
+        Http::assertSentCount(2);
+        foreach (Http::recorded() as [$request]) {
+            $input = json_decode($request['input'][0]['content'][0]['text'], true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame([], $input['screened_public_chat_history']);
+        }
     }
 
     public function test_provider_failure_logs_only_stage_status_type_and_latency(): void
@@ -115,6 +139,29 @@ class AssistantAgenticTurnServiceTest extends TestCase
             && str_contains($request['input'], '"trusted_pending_clarification":"sales_period"'));
     }
 
+    public function test_a_new_reporting_period_reuses_only_an_answered_sales_summary(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        $call = ['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => [
+            'period' => 'last_month', 'metric_evidence' => '', 'period_evidence' => 'previous month',
+        ]]]];
+        Http::fakeSequence()
+            ->push($call)
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]])
+            ->push($call)
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure do you want for that period?","pending":"store_goal"}']]]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $sales = $service->answer('Could you show the previous month too?', visitContext: ['intent' => 'sales_summary', 'store_topic' => 'sales'], routingOnly: true);
+        $ranking = $service->answer('Could you show the previous month too?', visitContext: ['intent' => 'best_sellers', 'store_topic' => 'sales'], routingOnly: true);
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'last_month']], $sales['evaluation']);
+        $this->assertSame('clarification', $ranking['status']);
+        $requests = Http::recorded()->map(fn (array $pair): Request => $pair[0]);
+        $this->assertStringContainsString('"trusted_previous_measure":"sales_summary"', $requests[1]['input']);
+        $this->assertStringContainsString('missing_metric_evidence', json_encode($requests[3]->data(), JSON_THROW_ON_ERROR));
+    }
+
     public function test_invalid_clarification_period_is_not_kept_as_visit_context(): void
     {
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
@@ -166,6 +213,21 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('Unsa nga bahin ang gusto nimong susihon?', $result['message']);
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'current Owner turn is in Cebuano'));
+    }
+
+    public function test_an_english_sales_command_gets_a_language_hint_without_forcing_english_on_taglish(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which sales period would you like?","pending":"sales_period"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Anong sales period ang gusto mo?","pending":"sales_period"}']]]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $this->assertSame('Which sales period would you like?', $service->answer('Show me total sales')['message']);
+        $this->assertSame('Anong sales period ang gusto mo?', $service->answer('Show me po ang total sales')['message']);
+
+        $requests = Http::recorded()->map(fn (array $pair): Request => $pair[0]);
+        $this->assertStringContainsString('current Owner turn is in English', $requests[0]['system_instruction']);
+        $this->assertStringNotContainsString('Reply in English only', $requests[1]['system_instruction']);
     }
 
     public function test_a_sales_follow_up_cannot_assume_a_period_when_none_was_kept(): void
@@ -255,13 +317,20 @@ class AssistantAgenticTurnServiceTest extends TestCase
     public function test_scope_audit_accepts_a_complete_sales_tool_call(): void
     {
         config(['assistant.agentic_scope_audit' => true]);
-        Http::fakeSequence()
+        $responses = Http::sequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $timeouts = [];
+        Http::fake(['generativelanguage.googleapis.com/*' => function (Request $request, array $options) use ($responses, &$timeouts) {
+            $timeouts[] = $options['timeout'];
+
+            return $responses($request);
+        }]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales this month', routingOnly: true);
 
         $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
+        $this->assertSame([18, 7], $timeouts);
         Http::assertSentCount(2);
     }
 
@@ -279,6 +348,47 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('I cannot verify “tops” with this store summary. Please restate the full question for an overall view.', $result['message']);
         $this->assertStringNotContainsString('Would you like me to filter', $result['message']);
         Http::assertSentCount(2);
+    }
+
+    public function test_unsupported_scope_fallback_uses_cebuano_without_promising_the_filter(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'hapit mahurot']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"jacket","clarification":"Would you like me to filter by jacket?","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Unsa nga jacket ang hapit mahurot?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'ceb'], $result['visit_context']);
+        $this->assertStringContainsString('Dili nako maapil ang “jacket”', $result['message']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_catalog_product_qualifier_cannot_turn_into_an_overall_low_stock_answer(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        $owner = User::query()->where('role', 'store_owner')->firstOrFail();
+        $category = Category::query()->create(['category_name' => 'Synthetic outerwear', 'status' => 'active']);
+        Product::query()->create([
+            'product_code' => 'SYN-JACKET', 'product_name' => 'Synthetic Denim Jacket',
+            'category_id' => $category->id, 'description' => 'Fictional product',
+            'price' => 10, 'quantity' => 2, 'low_stock_threshold' => 1,
+            'image' => '', 'status' => 'active', 'created_by' => $owner->id, 'updated_by' => $owner->id,
+        ]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'low-stock']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_low', 'name' => 'low_stock', 'arguments' => ['metric_evidence' => 'low-stock']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $filtered = $service->answer('Pila ka low-stock nga jacket karon sa tindahan?', routingOnly: true);
+        $overall = $service->answer('Show the overall low-stock products', routingOnly: true);
+
+        $this->assertSame('clarification', $filtered['status']);
+        $this->assertStringContainsString('Dili nako maapil ang “jacket”', $filtered['message']);
+        $this->assertSame(['tool' => 'low_stock', 'args' => []], $overall['evaluation']);
+        Http::assertSentCount(3);
     }
 
     public function test_scope_audit_ignores_an_old_offer_when_the_owner_explicitly_switches_store_topics(): void
