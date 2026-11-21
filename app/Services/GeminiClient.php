@@ -18,6 +18,7 @@ class GeminiClient
         string $prompt,
         ?string $systemInstruction = null,
         ?array $responseSchema = null,
+        ?int $timeoutSeconds = null,
     ): string {
         $payload = [
             'model' => config('services.gemini.model'),
@@ -37,7 +38,7 @@ class GeminiClient
             ];
         }
 
-        $response = $this->request()->post('interactions', $payload)->throw();
+        $response = $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
 
         if ($response->json('status') !== 'completed') {
             throw new RuntimeException('Gemini did not complete the text interaction.');
@@ -62,7 +63,7 @@ class GeminiClient
      * @param  list<array<string, mixed>>  $tools
      * @return list<array<string, mixed>>
      */
-    public function interactWithTools(array $input, array $tools, string $systemInstruction, bool $allowTools = true): array
+    public function interactWithTools(array $input, array $tools, string $systemInstruction, bool $allowTools = true, ?int $timeoutSeconds = null): array
     {
         $payload = [
             'model' => config('services.gemini.model'),
@@ -76,7 +77,7 @@ class GeminiClient
             $payload['generation_config'] = ['tool_choice' => $allowTools ? 'auto' : 'none'];
         }
 
-        $response = $this->request()->post('interactions', $payload)->throw();
+        $response = $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
 
         $steps = $response->json('steps');
 
@@ -128,7 +129,7 @@ class GeminiClient
         return $values;
     }
 
-    private function request(): PendingRequest
+    private function request(?int $timeoutSeconds = null): PendingRequest
     {
         $apiKey = config('services.gemini.api_key');
 
@@ -139,6 +140,6 @@ class GeminiClient
         return Http::baseUrl(self::BASE_URL)
             ->acceptJson()
             ->withHeader('x-goog-api-key', $apiKey)
-            ->timeout(30);
+            ->timeout($timeoutSeconds ?? 30);
     }
 }

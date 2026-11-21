@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Services\AssistantScopeAuditService;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class AssistantScopeAuditServiceTest extends TestCase
@@ -57,8 +59,28 @@ class AssistantScopeAuditServiceTest extends TestCase
         $this->assertNull($result['message']);
     }
 
+    public function test_a_pending_sales_period_is_sent_without_store_facts(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
+                'type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}',
+            ]]]],
+        ])]);
+
+        $result = app(AssistantScopeAuditService::class)->audit(
+            'Yesterday would be great', 'sales_summary', ['period' => 'yesterday'],
+            'Recorded sales count and total for one Philippine-time period.', null, 'sales_period',
+        );
+
+        $this->assertTrue($result['covered']);
+        Http::assertSent(fn (Request $request): bool => $request['store'] === false
+            && str_contains($request['input'], '"trusted_pending_clarification":"sales_period"')
+            && ! str_contains($request['input'], 'total_sales'));
+    }
+
     public function test_an_invented_qualifier_or_provider_failure_fails_closed(): void
     {
+        Log::spy();
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
                 'type' => 'text',
@@ -74,5 +96,13 @@ class AssistantScopeAuditServiceTest extends TestCase
         $this->assertTrue($failed['unavailable']);
         $this->assertFalse($failed['covered']);
         Http::assertSentCount(2);
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
+            return $message === 'Assistant agentic provider failed'
+                && array_keys($context) === ['stage', 'http_status', 'exception', 'latency_ms']
+                && $context['stage'] === 'scope_audit'
+                && $context['http_status'] === 503
+                && $context['exception'] === RequestException::class
+                && is_int($context['latency_ms']);
+        });
     }
 }

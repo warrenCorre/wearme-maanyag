@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 use LogicException;
 use RuntimeException;
@@ -23,7 +24,7 @@ class AssistantScopeAuditService
     ];
 
     private const INSTRUCTION = <<<'INSTRUCTION'
-        You are Maanyag's separate request-coverage auditor. Another model selected a read-only tool; do not trust its choice. Compare the Owner's current screened turn and any trusted pending offer with the exact tool description and arguments. Would executing this exact call fully answer every material qualifier, including category, person, grouping, metric, period, comparison, exclusion and requested output type? Never silently drop one. A brief acceptance is covered only when it clearly accepts the matching trusted offer. Set language=en for a clearly English current turn, ceb for clearly Cebuano, or mixed otherwise. If covered, return covered=true and empty strings for uncovered and clarification, with offer_ungrouped=false. Otherwise return covered=false, an exact short quote of the unsupported or ambiguous part, and one short natural clarification in the Owner's current language. Set offer_ungrouped=true only if the reply explicitly asks whether the Owner wants this same public aggregate without its unsupported filter; do not offer a different period, private detail or write. Never claim a store fact or figure. Return only the required JSON fields.
+        You are Maanyag's separate request-coverage auditor. Another model selected a read-only tool; do not trust its choice. Compare the Owner's current screened turn and any trusted pending offer with the exact tool description and arguments. A trusted pending sales_period means the Owner already requested sales totals and was asked to choose a reporting period; a new turn supplying that period can complete the request. It does not excuse a missing period or any new unsupported qualifier. Would executing this exact call fully answer every material qualifier, including category, person, grouping, metric, period, comparison, exclusion and requested output type? Never silently drop one. A brief acceptance is covered only when it clearly accepts the matching trusted offer. Set language=en for a clearly English current turn, ceb for clearly Cebuano, or mixed otherwise. If covered, return covered=true and empty strings for uncovered and clarification, with offer_ungrouped=false. Otherwise return covered=false, an exact short quote of the unsupported or ambiguous part, and one short natural clarification in the Owner's current language. Set offer_ungrouped=true only if the reply explicitly asks whether the Owner wants this same public aggregate without its unsupported filter; do not offer a different period, private detail or write. Never claim a store fact or figure. Return only the required JSON fields.
         INSTRUCTION;
 
     public function __construct(
@@ -35,8 +36,10 @@ class AssistantScopeAuditService
      * @param  array{tool: string, arguments: array<string, string>}|null  $trustedOffer
      * @return array{covered: bool, unavailable: bool, message: ?string, uncovered: string, offer_ungrouped: bool, language: ?string}
      */
-    public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer): array
+    public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer, ?string $trustedPending = null): array
     {
+        $startedAt = hrtime(true);
+
         try {
             $input = json_encode([
                 'current_screened_turn' => $turn,
@@ -44,10 +47,18 @@ class AssistantScopeAuditService
                 'selected_arguments' => $arguments,
                 'tool_contract' => $description,
                 'trusted_pending_offer' => $trustedOffer,
+                'trusted_pending_clarification' => $trustedPending === 'sales_period' ? $trustedPending : null,
             ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA);
+            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA, timeoutSeconds: 7);
             $decoded = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException) {
+        } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {
+            Log::warning('Assistant agentic provider failed', [
+                'stage' => 'scope_audit',
+                'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                'exception' => $exception::class,
+                'latency_ms' => intdiv(hrtime(true) - $startedAt, 1_000_000),
+            ]);
+
             return $this->unavailable();
         }
 
