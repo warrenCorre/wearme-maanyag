@@ -2526,6 +2526,14 @@
           "say": "Sales?",
           "expect": {
             "outcome": "clarify",
+            "asks": "metric",
+            "retain": {}
+          }
+        },
+        {
+          "say": "Just the totals please",
+          "expect": {
+            "outcome": "clarify",
             "asks": "period",
             "retain": {}
           }
@@ -2852,7 +2860,7 @@
           "say": "Sales?",
           "expect": {
             "outcome": "clarify",
-            "asks": "period",
+            "asks": "metric",
             "retain": {}
           }
         },

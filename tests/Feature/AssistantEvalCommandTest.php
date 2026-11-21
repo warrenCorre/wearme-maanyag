@@ -96,6 +96,34 @@ class AssistantEvalCommandTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_the_first_sales_followup_eval_scores_goal_then_period_then_answer(): void
+    {
+        $this->createOwner();
+        config([
+            'services.gemini.allow_conversation' => true,
+            'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+            'assistant.agentic_scope_audit' => true,
+        ]);
+        Http::preventStrayRequests();
+        Http::fakeSequence('generativelanguage.googleapis.com/*')
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Are you looking for sales totals or best sellers?","pending":"sales_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which reporting period would you like?","pending":"sales_period"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'yesterday', 'metric_evidence' => '', 'period_evidence' => 'Yesterday']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $exit = Artisan::call('assistant:eval', [
+            '--flow' => 'agentic', '--group' => 'followup', '--limit' => '1', '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame(1, $report['passed']);
+        $this->assertSame([], $report['failures']);
+        $this->assertCount(3, $report['turns']);
+        Http::assertSentCount(4);
+    }
+
     public function test_an_offered_aggregate_is_scored_as_a_scope_clarification(): void
     {
         $this->createOwner();

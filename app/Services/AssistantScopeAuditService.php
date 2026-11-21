@@ -25,6 +25,7 @@ class AssistantScopeAuditService
 
     private const INSTRUCTION = <<<'INSTRUCTION'
         You are Maanyag's separate request-coverage auditor. Another model selected a read-only tool; do not trust its choice. Compare the Owner's current screened turn and any trusted pending offer with the exact tool description and arguments. A trusted pending sales_period means the Owner already requested sales totals and was asked to choose a reporting period; a new turn supplying that period can complete the request. It does not excuse a missing period or any new unsupported qualifier. Would executing this exact call fully answer every material qualifier, including category, person, grouping, metric, period, comparison, exclusion and requested output type? Never silently drop one. A brief acceptance is covered only when it clearly accepts the matching trusted offer. Set language=en for a clearly English current turn, ceb for clearly Cebuano, or mixed otherwise. If covered, return covered=true and empty strings for uncovered and clarification, with offer_ungrouped=false. Otherwise return covered=false, an exact short quote of the unsupported or ambiguous part, and one short natural clarification in the Owner's current language. Set offer_ungrouped=true only if the reply explicitly asks whether the Owner wants this same public aggregate without its unsupported filter; do not offer a different period, private detail or write. Never claim a store fact or figure. Return only the required JSON fields.
+        A trusted previous measure of sales_summary means Laravel verified sales totals and transaction count in the previous answer. It supplies that measure only if the current turn clearly continues it by selecting a new period. Check that the selected period matches the current request and reject any omitted filter or comparison. A new topic or a bare acknowledgement does not continue the measure.
         INSTRUCTION;
 
     public function __construct(
@@ -36,7 +37,7 @@ class AssistantScopeAuditService
      * @param  array{tool: string, arguments: array<string, string>}|null  $trustedOffer
      * @return array{covered: bool, unavailable: bool, message: ?string, uncovered: string, offer_ungrouped: bool, language: ?string}
      */
-    public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer, ?string $trustedPending = null): array
+    public function audit(string $turn, string $tool, array $arguments, string $description, ?array $trustedOffer, ?string $trustedPending = null, bool $continuesSalesSummary = false, int $timeoutSeconds = 7): array
     {
         $startedAt = hrtime(true);
 
@@ -48,8 +49,9 @@ class AssistantScopeAuditService
                 'tool_contract' => $description,
                 'trusted_pending_offer' => $trustedOffer,
                 'trusted_pending_clarification' => $trustedPending === 'sales_period' ? $trustedPending : null,
+                'trusted_previous_measure' => $tool === 'sales_summary' && $continuesSalesSummary ? 'sales_summary' : null,
             ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA, timeoutSeconds: 7);
+            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA, timeoutSeconds: $timeoutSeconds);
             $decoded = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
         } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {
             Log::warning('Assistant agentic provider failed', [
