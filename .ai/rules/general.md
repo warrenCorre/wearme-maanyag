@@ -19,3 +19,6 @@ For every required agent browser check, bring the test browser window to the for
 
 ## Use Conventional Commit messages
 Use `type(scope): concise description` for every new local commit. Choose a fitting type such as `feat`, `fix`, `docs`, `refactor`, `test`, or `chore`, and a meaningful scope such as `assistant` or `dashboard`; use `feat` only for a feature.
+
+## Leave final browser result visible for Owner review
+After the last agent browser check for a slice, leave the foreground Chrome window showing the final tested result. Do not refresh, navigate away, start a new chat, or clear that view after testing; the Owner reviews it later. Restore any temporary code/config test mode without disturbing the displayed page.
