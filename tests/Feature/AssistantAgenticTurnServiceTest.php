@@ -137,6 +137,38 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_a_direct_sales_period_clarification_reasks_the_measure_when_the_period_is_already_known(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which period?","pending":"sales_period"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Which sales measure would you like for last month?"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Sales, please', visitContext: ['pending' => 'store_goal', 'period' => 'last_month']);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('Which sales measure would you like for last month?', $result['message']);
+        $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $result['visit_context']);
+        $requests = Http::recorded()->map(fn (array $pair): Request => $pair[0]);
+        $this->assertFalse(isset($requests[1]['tools']));
+        $this->assertSame('application/json', $requests[1]['response_format']['mime_type']);
+        $this->assertStringContainsString('"known_period":"last_month"', $requests[1]['input']);
+        $this->assertTrue($requests[1]['store'] === false);
+    }
+
+    public function test_a_rejected_sales_period_call_keeps_the_known_period_for_a_measure_clarification(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Did you mean sales totals or another sales measure for last month?"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Sales, please', visitContext: ['pending' => 'store_goal', 'period' => 'last_month']);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('Did you mean sales totals or another sales measure for last month?', $result['message']);
+        $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
     public function test_scope_audit_receives_the_validated_period_from_a_broad_store_clarification(): void
     {
         config(['assistant.agentic_scope_audit' => true]);
@@ -194,7 +226,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
             ->push($call)
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]])
             ->push($call)
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure do you want for that period?","pending":"store_goal"}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Which store measure do you want for that period?"}']]]]]);
         $service = app(AssistantAgenticTurnService::class);
 
         $sales = $service->answer('Could you show the previous month too?', visitContext: ['intent' => 'sales_summary', 'store_topic' => 'sales'], routingOnly: true);
@@ -204,7 +236,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('clarification', $ranking['status']);
         $requests = Http::recorded()->map(fn (array $pair): Request => $pair[0]);
         $this->assertStringContainsString('"trusted_previous_measure":"sales_summary"', $requests[1]['input']);
-        $this->assertStringContainsString('missing_metric_evidence', json_encode($requests[3]->data(), JSON_THROW_ON_ERROR));
+        $this->assertStringContainsString('"missing":"measure"', $requests[3]['input']);
     }
 
     public function test_invalid_clarification_period_is_not_kept_as_visit_context(): void
@@ -223,7 +255,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'sales', 'period_evidence' => 'last month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure would you like to check?","pending":"store_goal","period":"last_month"}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Which store measure would you like to check?"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('How did our shop do last month?');
 
@@ -236,7 +268,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'our shop do last month', 'period_evidence' => 'last month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store measure did you mean?","pending":"store_goal"}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Which store measure did you mean?"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('How did our shop do last month?', routingOnly: true);
 
@@ -245,13 +277,17 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $result['visit_context']);
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'current Owner turn is in English'));
+        Http::assertSent(fn (Request $request): bool => ($request['response_format']['mime_type'] ?? null) === 'application/json'
+            && ! isset($request['tools']) && $request['store'] === false
+            && ! str_contains($request['input'], 'rejected_tool')
+            && str_contains($request['input'], '"known_period":"last_month"'));
     }
 
     public function test_a_generic_cebuano_shop_quote_asks_for_a_measure_in_the_current_language(): void
     {
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'atong tindahan niaging bulan', 'period_evidence' => 'niaging bulan']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Unsa nga bahin ang gusto nimong susihon?","pending":"store_goal"}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Unsa nga bahin ang gusto nimong susihon?"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Kumusta atong tindahan niaging bulan?', routingOnly: true);
 
@@ -260,6 +296,20 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('Unsa nga bahin ang gusto nimong susihon?', $result['message']);
         Http::assertSentCount(2);
         Http::assertSent(fn (Request $request): bool => str_contains($request['system_instruction'], 'current Owner turn is in Cebuano'));
+    }
+
+    public function test_invalid_structured_clarification_falls_back_without_claiming_a_store_fact(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'last_month', 'metric_evidence' => 'sales', 'period_evidence' => 'last month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"There were 99 sales."}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('How did our shop do last month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertStringNotContainsString('99', $result['message']);
+        $this->assertSame(['pending' => 'store_goal', 'period' => 'last_month'], $result['visit_context']);
+        Http::assertSentCount(2);
     }
 
     public function test_an_english_sales_command_gets_a_language_hint_without_forcing_english_on_taglish(): void
@@ -281,7 +331,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'Sales', 'period_evidence' => '']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which reporting period would you like?","pending":"sales_period"}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Which reporting period would you like?"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Sales, please', visitContext: ['pending' => 'store_goal']);
 
