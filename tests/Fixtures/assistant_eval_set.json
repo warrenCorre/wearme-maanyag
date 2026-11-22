@@ -2568,6 +2568,16 @@
         {
           "say": "Just the totals please",
           "expect": {
+            "outcome": "clarify",
+            "asks": "metric",
+            "retain": {
+              "period": "last_month"
+            }
+          }
+        },
+        {
+          "say": "Sales totals, please",
+          "expect": {
             "outcome": "answer",
             "tool": "sales_summary",
             "args": {

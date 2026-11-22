@@ -82,7 +82,7 @@ class AssistantScopeAuditServiceTest extends TestCase
     {
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
             'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
-                'type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}',
+                'type' => 'text', 'text' => '{"covered":false,"uncovered":"Sales","clarification":"Which sales measure would you like?","offer_ungrouped":false,"language":"en"}',
             ]]]],
         ])]);
 
@@ -92,11 +92,30 @@ class AssistantScopeAuditServiceTest extends TestCase
             pendingStorePeriod: 'last_month',
         );
 
-        $this->assertTrue($result['covered']);
+        $this->assertFalse($result['covered']);
         Http::assertSent(fn (Request $request): bool => $request['store'] === false
             && str_contains($request['input'], '"trusted_pending_store_period":"last_month"')
             && ! str_contains($request['input'], 'How did we do last month?')
-            && ! str_contains($request['input'], 'total_sales'));
+            && ! str_contains($request['input'], 'total_sales')
+            && str_contains($request['system_instruction'], 'A broad mention of sales'));
+    }
+
+    public function test_a_clear_sales_total_can_use_the_validated_pending_store_period(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
+                'type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}',
+            ]]]],
+        ])]);
+
+        $result = app(AssistantScopeAuditService::class)->audit(
+            'Sales totals, please', 'sales_summary', ['period' => 'last_month'],
+            'Recorded sales count and total for one Philippine-time period.', null,
+            pendingStorePeriod: 'last_month',
+        );
+
+        $this->assertTrue($result['covered']);
+        Http::assertSentCount(1);
     }
 
     public function test_an_invented_qualifier_or_provider_failure_fails_closed(): void
