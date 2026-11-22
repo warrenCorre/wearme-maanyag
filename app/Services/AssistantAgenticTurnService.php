@@ -36,6 +36,7 @@ class AssistantAgenticTurnService
 
     public function __construct(
         private AssistantPrivacyFilter $privacyFilter,
+        private AssistantStoreTurnScreen $storeTurnScreen,
         private AssistantToolRegistry $toolRegistry,
         private AssistantScopeAuditService $scopeAuditService,
         private GeminiClient $geminiClient,
@@ -136,7 +137,7 @@ class AssistantAgenticTurnService
             }
 
             if (! $validation['valid']) {
-                return $this->explainInvalidCall($input, $steps, $tools, $name, $id, $arguments, $validation['reason'], $systemInstruction, $deadline);
+                return $this->explainInvalidCall($input, $steps, $tools, $name, $id, $arguments, $validation['reason'], $systemInstruction, $deadline, $turn);
             }
 
             if (config('assistant.agentic_scope_audit', true)) {
@@ -171,9 +172,11 @@ class AssistantAgenticTurnService
 
                 $pendingSalesPeriod = $name === 'sales_summary' && $this->trustedPending($visitContext) === 'sales_period'
                     ? 'sales_period' : null;
+                $pendingStorePeriod = $this->trustedPending($visitContext) === 'store_goal'
+                    ? $this->trustedPeriod($visitContext) : null;
                 $previousSalesMeasure = $name === 'sales_summary' && trim($suppliedArguments['metric_evidence']) === ''
                     && $matchingOffer === null && $this->continuesAnsweredSales($visitContext);
-                $audit = $this->scopeAuditService->audit($turn, $name, $arguments, $description, $matchingOffer, $pendingSalesPeriod, $previousSalesMeasure, timeoutSeconds: $timeout);
+                $audit = $this->scopeAuditService->audit($turn, $name, $arguments, $description, $matchingOffer, $pendingSalesPeriod, $previousSalesMeasure, timeoutSeconds: $timeout, pendingStorePeriod: $pendingStorePeriod);
 
                 if ($audit['unavailable']) {
                     return ['status' => 'unavailable', 'message' => $audit['message']];
@@ -233,7 +236,7 @@ class AssistantAgenticTurnService
      * @param  list<array<string, mixed>>  $tools
      * @return array<string, mixed>
      */
-    private function explainInvalidCall(array $input, array $steps, array $tools, string $name, string $id, mixed $arguments, ?string $reason, string $systemInstruction, int $deadline): array
+    private function explainInvalidCall(array $input, array $steps, array $tools, string $name, string $id, mixed $arguments, ?string $reason, string $systemInstruction, int $deadline, string $turn): array
     {
         $pending = $reason === 'missing_period_evidence' ? 'sales_period' : 'store_goal';
         $suggestedOffer = $reason === 'unsupported_grouping' && is_array($arguments)
@@ -265,8 +268,8 @@ class AssistantAgenticTurnService
         }
 
         return $reply !== null && $reply['kind'] !== 'chat'
-            ? ['status' => $reply['kind'] === 'clarification' ? 'clarification' : 'declined', 'message' => $reply['reply'], ...($reply['kind'] === 'clarification' ? ['visit_context' => $this->clarificationContext($reply)] : [])]
-            : ['status' => 'clarification', 'message' => 'I need a little more detail to check that safely. Which store measure or period would you like?', 'visit_context' => ['pending' => $pending]];
+            ? ['status' => $reply['kind'] === 'clarification' ? 'clarification' : 'declined', 'message' => $reply['reply'], ...($reply['kind'] === 'clarification' ? ['visit_context' => $this->clarificationContext($reply, $turn)] : [])]
+            : ['status' => 'clarification', 'message' => 'I need a little more detail to check that safely. Which store measure or period would you like?', 'visit_context' => $this->clarificationContext(['pending' => $pending], $turn)];
     }
 
     /** @param array{tool: string, arguments: array<string, string>} $offer
@@ -328,7 +331,8 @@ class AssistantAgenticTurnService
         }
 
         if ($reply['kind'] === 'clarification') {
-            $context = $this->clarificationContext($reply);
+            $context = $this->clarificationContext($reply, $turn);
+
             $previousLanguage = $this->trustedReplyLanguage($visitContext);
 
             if ($previousLanguage !== null && $this->replyLanguageInstruction($turn, null) === '') {
@@ -643,16 +647,30 @@ class AssistantAgenticTurnService
             ? ['tool' => $offer['tool'], 'arguments' => $offer['arguments']] : null;
     }
 
-    /** @param array{kind: string, reply: string, pending?: string, period?: string, offer?: array{tool: string, arguments: array<string, string>}} $reply
+    /** @param array{pending?: string, period?: string, offer?: array{tool: string, arguments: array<string, string>}} $reply
      * @return array<string, mixed>
      */
-    private function clarificationContext(array $reply): array
+    private function clarificationContext(array $reply, string $turn): array
     {
-        return [
+        $context = [
             'pending' => $reply['pending'] ?? 'store_goal',
             ...(isset($reply['period']) ? ['period' => $reply['period']] : []),
             ...(isset($reply['offer']) ? ['offer' => $reply['offer']] : []),
         ];
+
+        if ($context['pending'] === 'store_goal') {
+            $screenedPeriod = $this->storeTurnScreen->screenNaturalIntent($turn, true, true)['period'] ?? null;
+            $period = is_string($screenedPeriod)
+                ? $this->trustedPeriod(['period' => str_replace(' ', '_', $screenedPeriod)]) : null;
+
+            if ($period !== null) {
+                $context['period'] = $period;
+            } else {
+                unset($context['period']);
+            }
+        }
+
+        return $context;
     }
 
     /** @param array<string, mixed>|null $context
