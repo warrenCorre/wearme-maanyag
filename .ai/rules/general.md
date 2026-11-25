@@ -5,6 +5,9 @@ paths:
 
 # General
 
+## Propose each change slice first
+Before starting a new change slice, propose its goal, exact file scope, verification plan, and material risks to the Owner. Wait for approval before editing. Once approved, complete that scope through verification and local commit without asking again unless the scope or direction changes.
+
 ## Owner performs independent browser verification
 The Owner independently checks application changes in their local browser and reports their sign-off. Agent-observed checks are separate and must not be presented as the Owner's browser pass. Never expose customer or individual-sale details in test prompts or change the Gemini-sharing flag just to test.
 
