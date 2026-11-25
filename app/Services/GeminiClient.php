@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -142,8 +143,10 @@ class GeminiClient
 
         try {
             return $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
-        } catch (RequestException $exception) {
-            $delayMilliseconds = $retryTransient ? $this->retryDelayMilliseconds($exception) : null;
+        } catch (RequestException|ConnectionException $exception) {
+            $delayMilliseconds = $retryTransient
+                ? ($exception instanceof ConnectionException ? 250 : $this->retryDelayMilliseconds($exception))
+                : null;
 
             if ($delayMilliseconds === null || $deadline === null
                 || $deadline - hrtime(true) < ($delayMilliseconds + 2000) * 1_000_000) {
