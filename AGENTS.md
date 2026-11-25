@@ -6,6 +6,7 @@
 - Database: MySQL
 
 ## Working Rules
+- Before starting a new change slice, propose its goal, exact file scope, verification plan, and material risks to the Owner. Wait for approval before editing. Once approved, complete that scope through verification and local commit without asking again unless the scope or direction changes.
 - Inspect existing code before editing.
 - Follow the existing architecture.
 - Do not rewrite unrelated code.

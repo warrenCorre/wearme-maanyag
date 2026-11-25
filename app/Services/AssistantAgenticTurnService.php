@@ -103,7 +103,7 @@ class AssistantAgenticTurnService
         $startedAt = hrtime(true);
 
         try {
-            $steps = $this->geminiClient->interactWithTools($input, $tools, $systemInstruction, timeoutSeconds: $timeout);
+            $steps = $this->geminiClient->interactWithTools($input, $tools, $systemInstruction, timeoutSeconds: $timeout, retryTransient: true);
         } catch (ConnectionException|RequestException|RuntimeException|LogicException $exception) {
             $this->logProviderFailure('tool_routing', $exception, $startedAt);
 
@@ -280,7 +280,8 @@ class AssistantAgenticTurnService
                     ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                         self::INVALID_CALL_CLARIFICATION_INSTRUCTION.$this->replyLanguageInstruction($turn, null),
                         self::INVALID_CALL_CLARIFICATION_SCHEMA,
-                        timeoutSeconds: $timeout);
+                        timeoutSeconds: $timeout,
+                        retryTransient: true);
                     $decoded = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
 
                     if (is_array($decoded) && array_keys($decoded) === ['reply']
@@ -288,7 +289,7 @@ class AssistantAgenticTurnService
                         $reply = ['kind' => 'clarification', 'reply' => trim($decoded['reply']), 'pending' => $pending];
                     }
                 } else {
-                    $replySteps = $this->geminiClient->interactWithTools($input, $tools, $systemInstruction, false, timeoutSeconds: $timeout);
+                    $replySteps = $this->geminiClient->interactWithTools($input, $tools, $systemInstruction, false, timeoutSeconds: $timeout, retryTransient: true);
                     $reply = $this->parseDirectReply($replySteps);
                 }
             } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {

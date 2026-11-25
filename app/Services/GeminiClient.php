@@ -3,7 +3,10 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use LogicException;
 use RuntimeException;
 
@@ -19,6 +22,7 @@ class GeminiClient
         ?string $systemInstruction = null,
         ?array $responseSchema = null,
         ?int $timeoutSeconds = null,
+        bool $retryTransient = false,
     ): string {
         $payload = [
             'model' => config('services.gemini.model'),
@@ -38,7 +42,7 @@ class GeminiClient
             ];
         }
 
-        $response = $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
+        $response = $this->postInteraction($payload, $timeoutSeconds, $retryTransient);
 
         if ($response->json('status') !== 'completed') {
             throw new RuntimeException('Gemini did not complete the text interaction.');
@@ -63,7 +67,7 @@ class GeminiClient
      * @param  list<array<string, mixed>>  $tools
      * @return list<array<string, mixed>>
      */
-    public function interactWithTools(array $input, array $tools, string $systemInstruction, bool $allowTools = true, ?int $timeoutSeconds = null): array
+    public function interactWithTools(array $input, array $tools, string $systemInstruction, bool $allowTools = true, ?int $timeoutSeconds = null, bool $retryTransient = false): array
     {
         $payload = [
             'model' => config('services.gemini.model'),
@@ -77,7 +81,7 @@ class GeminiClient
             $payload['generation_config'] = ['tool_choice' => $allowTools ? 'auto' : 'none'];
         }
 
-        $response = $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
+        $response = $this->postInteraction($payload, $timeoutSeconds, $retryTransient);
 
         $steps = $response->json('steps');
 
@@ -127,6 +131,55 @@ class GeminiClient
         }
 
         return $values;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postInteraction(array $payload, ?int $timeoutSeconds, bool $retryTransient): Response
+    {
+        $deadline = $timeoutSeconds !== null ? hrtime(true) + $timeoutSeconds * 1_000_000_000 : null;
+
+        try {
+            return $this->request($timeoutSeconds)->post('interactions', $payload)->throw();
+        } catch (RequestException $exception) {
+            $delayMilliseconds = $retryTransient ? $this->retryDelayMilliseconds($exception) : null;
+
+            if ($delayMilliseconds === null || $deadline === null
+                || $deadline - hrtime(true) < ($delayMilliseconds + 2000) * 1_000_000) {
+                throw $exception;
+            }
+
+            Sleep::for($delayMilliseconds)->milliseconds();
+            $remainingSeconds = intdiv($deadline - hrtime(true), 1_000_000_000);
+
+            if ($remainingSeconds < 2) {
+                throw $exception;
+            }
+
+            return $this->request($remainingSeconds)->post('interactions', $payload)->throw();
+        }
+    }
+
+    private function retryDelayMilliseconds(RequestException $exception): ?int
+    {
+        $status = $exception->response->status();
+
+        if (in_array($status, [500, 502, 503, 504], true)) {
+            return 250;
+        }
+
+        if ($status !== 429) {
+            return null;
+        }
+
+        $retryAfter = $exception->response->header('Retry-After');
+
+        if (! is_string($retryAfter) || ! ctype_digit($retryAfter) || (int) $retryAfter > 1) {
+            return null;
+        }
+
+        return max(250, (int) $retryAfter * 1000);
     }
 
     private function request(?int $timeoutSeconds = null): PendingRequest
