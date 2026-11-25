@@ -42,7 +42,9 @@ class AssistantAnswerService
      */
     public function answer(string $question, ?CarbonInterface $referenceDate = null, ?array $visitContext = null, bool $routingOnly = false, ?string $flow = null): array
     {
-        if (($flow ?? config('assistant.mode', 'legacy')) === 'agentic') {
+        if (($flow ?? config('assistant.mode', 'legacy')) === 'agentic'
+            && ($flow !== null || (config('services.gemini.allow_conversation', false)
+                && config('services.gemini.allow_store_data', false)))) {
             return $this->agenticTurnService->answer($question, $referenceDate, $visitContext, $routingOnly);
         }
 

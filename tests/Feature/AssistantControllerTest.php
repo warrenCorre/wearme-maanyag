@@ -23,6 +23,29 @@ class AssistantControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_normal_mode_defaults_to_agentic_chat_with_existing_sharing_consent(): void
+    {
+        config([
+            'assistant.mode' => (require config_path('assistant.php'))['mode'],
+            'services.gemini.allow_conversation' => true,
+            'services.gemini.allow_store_data' => true,
+            'services.gemini.api_key' => 'fictional-key',
+        ]);
+        Http::preventStrayRequests();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'status' => 'completed',
+            'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hello, glad you are here."}']]]],
+        ])]);
+        $this->actingAs($this->createUser('store_owner'));
+
+        $this->postJson(route('assistant.ask'), ['question' => 'Hi Maanyag'])
+            ->assertJsonPath('result.status', 'general_chat')
+            ->assertJsonPath('result.message', 'Hello, glad you are here.');
+
+        $this->assertSame('agentic', config('assistant.mode'));
+        Http::assertSentCount(1);
+    }
+
     public function test_flagged_agentic_owner_can_chat_then_get_a_locally_verified_store_answer(): void
     {
         config([

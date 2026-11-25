@@ -28,6 +28,56 @@ use Tests\TestCase;
 
 class AssistantAnswerServiceTest extends TestCase
 {
+    public function test_normal_agentic_mode_uses_the_existing_local_path_without_both_sharing_gates(): void
+    {
+        config([
+            'assistant.mode' => 'agentic',
+            'services.gemini.allow_conversation' => false,
+            'services.gemini.allow_store_data' => true,
+        ]);
+        $agentic = Mockery::mock(AssistantAgenticTurnService::class);
+        $agentic->shouldNotReceive('answer');
+        $this->app->instance(AssistantAgenticTurnService::class, $agentic);
+
+        $result = app(AssistantAnswerService::class)->answer('Show me sales for this month', routingOnly: true);
+
+        $this->assertSame('evaluation', $result['status']);
+        $this->assertSame('sales_summary', $result['evaluation']['intent']);
+    }
+
+    public function test_normal_agentic_mode_uses_gemini_routing_when_both_sharing_gates_are_on(): void
+    {
+        config([
+            'assistant.mode' => 'agentic',
+            'services.gemini.allow_conversation' => true,
+            'services.gemini.allow_store_data' => true,
+        ]);
+        $agentic = Mockery::mock(AssistantAgenticTurnService::class);
+        $agentic->shouldReceive('answer')->once()->andReturn(['status' => 'general_chat', 'message' => 'Hello!']);
+        $this->app->instance(AssistantAgenticTurnService::class, $agentic);
+
+        $result = app(AssistantAnswerService::class)->answer('Hi Maanyag');
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('Hello!', $result['message']);
+    }
+
+    public function test_normal_agentic_mode_keeps_the_local_path_when_store_sharing_is_off(): void
+    {
+        config([
+            'assistant.mode' => 'agentic',
+            'services.gemini.allow_conversation' => true,
+            'services.gemini.allow_store_data' => false,
+        ]);
+        $agentic = Mockery::mock(AssistantAgenticTurnService::class);
+        $agentic->shouldNotReceive('answer');
+        $this->app->instance(AssistantAgenticTurnService::class, $agentic);
+
+        $result = app(AssistantAnswerService::class)->answer('Show me sales for this month', routingOnly: true);
+
+        $this->assertSame('disabled', $result['status']);
+    }
+
     public function test_routing_only_handles_chat_decisions_without_a_store_date_or_generated_reply(): void
     {
         config(['services.gemini.allow_conversation' => true, 'services.gemini.allow_store_data' => false]);
