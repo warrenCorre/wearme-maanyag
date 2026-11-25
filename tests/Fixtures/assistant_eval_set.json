@@ -581,6 +581,23 @@
       ]
     },
     {
+      "id": "SAL-031",
+      "group": "store_answer.sales",
+      "lang": "en",
+      "turns": [
+        {
+          "say": "Btw, how have sales been this month?",
+          "expect": {
+            "outcome": "answer",
+            "tool": "sales_summary",
+            "args": {
+              "period": "this_month"
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "INV-001",
       "group": "store_answer.inventory",
       "lang": "en",
