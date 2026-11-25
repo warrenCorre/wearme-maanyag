@@ -1782,6 +1782,23 @@
       ]
     },
     {
+      "id": "ACT-009",
+      "group": "store_answer.recent_activity",
+      "lang": "en",
+      "turns": [
+        {
+          "say": "What's going on in the Store for now?",
+          "expect": {
+            "outcome": "answer",
+            "tool": "recent_activity",
+            "args": {
+              "period": "today"
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "ADJ-001",
       "group": "store_answer.adjustment_totals",
       "lang": "en",
@@ -1917,21 +1934,6 @@
             "retain": {
               "period": "last_month"
             }
-          }
-        }
-      ]
-    },
-    {
-      "id": "CLR-005",
-      "group": "clarify",
-      "lang": "en",
-      "turns": [
-        {
-          "say": "What's going on in the Store for now?",
-          "expect": {
-            "outcome": "clarify",
-            "asks": "metric",
-            "retain": {}
           }
         }
       ]
