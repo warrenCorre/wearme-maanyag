@@ -279,12 +279,21 @@
 
                     const { result } = await response.json();
                     appendAssistantExchange(question, result);
-                    assistantQuestion.value = '';
+                    if (result.status === 'unavailable') {
+                        if (assistantQuestion.value.trim() === '') {
+                            assistantQuestion.value = question;
+                        }
+                    } else if (assistantQuestion.value.trim() === question) {
+                        assistantQuestion.value = '';
+                    }
                 } catch {
                     appendAssistantExchange(question, {
                         status: 'unavailable',
-                        message: 'The assistant is temporarily unavailable. Please try again.',
+                        message: 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.',
                     });
+                    if (assistantQuestion.value.trim() === '') {
+                        assistantQuestion.value = question;
+                    }
                 } finally {
                     assistantBusy = false;
                     assistantQuestion.focus({ preventScroll: true });
