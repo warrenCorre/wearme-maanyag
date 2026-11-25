@@ -69,7 +69,7 @@
             @endif
         </aside>
 
-        <section class="order-1 flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-[5px_5px_0_0_#0f172a] xl:order-2" aria-label="Assistant conversation">
+        <section class="order-1 flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-[5px_5px_0_0_#0f172a] xl:sticky xl:top-4 xl:order-2 xl:h-[calc(100vh-2rem)] xl:self-start" aria-label="Assistant conversation">
             <header class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-amber-50/60 px-5 py-5 sm:px-7">
                 <div class="flex min-w-0 items-start gap-3">
                     <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-900 bg-rose-100 text-xl text-rose-600" aria-hidden="true">◌</span>
@@ -82,7 +82,7 @@
                 <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 xl:hidden" href="{{ route('assistant.index') }}">New Chat</a>
             </header>
 
-            <div id="assistant-messages" class="flex min-h-[28rem] flex-1 flex-col gap-6 bg-[#fcfcfb] px-5 py-7 sm:px-7 xl:min-h-[36rem]" aria-live="polite">
+            <div id="assistant-messages" class="flex min-h-[28rem] flex-1 flex-col gap-6 bg-[#fcfcfb] px-5 py-7 sm:px-7 xl:min-h-0 xl:overflow-y-auto" aria-live="polite">
                 @isset($result)
                     @php
                         $resultClasses = match ($result['status']) {
@@ -237,7 +237,6 @@
 
             document.getElementById('assistant-welcome')?.remove();
             assistantMessages.appendChild(exchange);
-            assistantMessages.lastElementChild.scrollIntoView({ block: 'nearest' });
         };
 
         for (const form of assistantForms) {
@@ -288,7 +287,12 @@
                     });
                 } finally {
                     assistantBusy = false;
-                    assistantQuestion.focus();
+                    assistantQuestion.focus({ preventScroll: true });
+                    if (getComputedStyle(assistantMessages).overflowY === 'auto') {
+                        assistantMessages.scrollTop = assistantMessages.scrollHeight;
+                    } else {
+                        assistantMessages.lastElementChild?.scrollIntoView({ block: 'center' });
+                    }
                 }
             });
         }
