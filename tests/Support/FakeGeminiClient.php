@@ -14,7 +14,7 @@ class FakeGeminiClient extends GeminiClient
      *
      * @throws JsonException
      */
-    public function generateText(string $prompt, ?string $systemInstruction = null, ?array $responseSchema = null, ?int $timeoutSeconds = null): string
+    public function generateText(string $prompt, ?string $systemInstruction = null, ?array $responseSchema = null, ?int $timeoutSeconds = null, bool $retryTransient = false): string
     {
         if (($responseSchema['properties']['kind']['enum'] ?? null) === ['general_chat']) {
             $prefix = 'Current screened general-chat turn: ';

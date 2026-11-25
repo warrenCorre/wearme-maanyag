@@ -126,6 +126,7 @@ class AssistantScopeAuditServiceTest extends TestCase
                 'type' => 'text',
                 'text' => '{"covered":false,"uncovered":"customer Ana","clarification":"Ask without a customer name.","offer_ungrouped":false,"language":"en"}',
             ]]]]])
+            ->push(['error' => ['message' => 'Synthetic failure']], 503)
             ->push(['error' => ['message' => 'Synthetic failure']], 503);
         $service = app(AssistantScopeAuditService::class);
 
@@ -135,7 +136,7 @@ class AssistantScopeAuditServiceTest extends TestCase
         $this->assertTrue($invalid['unavailable']);
         $this->assertTrue($failed['unavailable']);
         $this->assertFalse($failed['covered']);
-        Http::assertSentCount(2);
+        Http::assertSentCount(3);
         Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
             return $message === 'Assistant agentic provider failed'
                 && array_keys($context) === ['stage', 'http_status', 'exception', 'latency_ms']
@@ -144,5 +145,21 @@ class AssistantScopeAuditServiceTest extends TestCase
                 && $context['exception'] === RequestException::class
                 && is_int($context['latency_ms']);
         });
+    }
+
+    public function test_fast_audit_failure_recovers_before_any_store_fact_is_read(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['message' => 'Synthetic outage']], 503)
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [[
+                'type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}',
+            ]]]]])]);
+
+        $result = app(AssistantScopeAuditService::class)->audit(
+            'Show sales this month', 'sales_summary', ['period' => 'this_month'], 'Recorded sales count and total.', null,
+        );
+
+        $this->assertTrue($result['covered']);
+        Http::assertSentCount(2);
     }
 }

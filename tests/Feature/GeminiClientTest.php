@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Providers\AppServiceProvider;
 use App\Services\GeminiClient;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use LogicException;
 use Tests\Support\FakeGeminiClient;
 use Tests\TestCase;
@@ -23,6 +25,13 @@ class GeminiClientTest extends TestCase
         ]);
 
         Http::preventStrayRequests();
+    }
+
+    protected function tearDown(): void
+    {
+        Sleep::fake(false);
+
+        parent::tearDown();
     }
 
     public function test_it_sends_text_generation_request_and_returns_model_output(): void
@@ -71,6 +80,114 @@ class GeminiClientTest extends TestCase
             && $request['tools'] === $tools
             && $request['generation_config']['tool_choice'] === 'auto'
             && ! isset($request['previous_interaction_id']));
+    }
+
+    public function test_agentic_tool_request_retries_one_fast_service_failure_within_its_budget(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['message' => 'Synthetic outage']], 503)
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hi!"}']]]]])]);
+
+        $steps = app(GeminiClient::class)->interactWithTools([], [], 'Fictional chat.', timeoutSeconds: 7, retryTransient: true);
+
+        $this->assertSame('model_output', $steps[0]['type']);
+        Http::assertSentCount(2);
+        Sleep::assertSleptTimes(1);
+    }
+
+    public function test_agentic_text_request_retries_a_429_only_with_a_short_explicit_delay(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['message' => 'Synthetic rate limit']], 429, ['Retry-After' => '1'])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Synthetic reply.']]]]])]);
+
+        $answer = app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7, retryTransient: true);
+
+        $this->assertSame('Synthetic reply.', $answer);
+        Http::assertSentCount(2);
+        Sleep::assertSleptTimes(1);
+    }
+
+    public function test_agentic_request_does_not_retry_a_429_without_a_short_retry_after(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic daily quota']], 429)]);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7, retryTransient: true);
+            $this->fail('Expected the quota response to fail.');
+        } catch (RequestException $exception) {
+            $this->assertSame(429, $exception->response->status());
+        }
+
+        Http::assertSentCount(1);
+        Sleep::assertSleptTimes(0);
+    }
+
+    public function test_agentic_request_does_not_retry_a_429_with_a_delay_outside_the_turn_budget(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic longer limit']], 429, ['Retry-After' => '30'])]);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7, retryTransient: true);
+            $this->fail('Expected the rate limit to remain unavailable.');
+        } catch (RequestException $exception) {
+            $this->assertSame(429, $exception->response->status());
+        }
+
+        Http::assertSentCount(1);
+        Sleep::assertSleptTimes(0);
+    }
+
+    public function test_ordinary_text_request_does_not_gain_an_automatic_retry(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic outage']], 503)]);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7);
+            $this->fail('Expected the ordinary request to fail.');
+        } catch (RequestException $exception) {
+            $this->assertSame(503, $exception->response->status());
+        }
+
+        Http::assertSentCount(1);
+        Sleep::assertSleptTimes(0);
+    }
+
+    public function test_agentic_request_does_not_retry_a_bad_request(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic bad request']], 400)]);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7, retryTransient: true);
+            $this->fail('Expected the bad request to fail.');
+        } catch (RequestException $exception) {
+            $this->assertSame(400, $exception->response->status());
+        }
+
+        Http::assertSentCount(1);
+        Sleep::assertSleptTimes(0);
+    }
+
+    public function test_agentic_request_skips_retry_when_the_remaining_budget_is_too_short(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'Synthetic outage']], 503)]);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 2, retryTransient: true);
+            $this->fail('Expected the service failure to remain unavailable.');
+        } catch (RequestException $exception) {
+            $this->assertSame(503, $exception->response->status());
+        }
+
+        Http::assertSentCount(1);
+        Sleep::assertSleptTimes(0);
     }
 
     public function test_tool_interaction_accepts_provider_action_status_only_with_a_function_call(): void

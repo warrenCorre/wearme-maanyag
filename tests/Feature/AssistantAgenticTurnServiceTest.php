@@ -83,6 +83,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $result = app(AssistantAgenticTurnService::class)->answer('Hello there');
 
         $this->assertSame('unavailable', $result['status']);
+        Http::assertSentCount(2);
         Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
             return $message === 'Assistant agentic provider failed'
                 && array_keys($context) === ['stage', 'http_status', 'exception', 'latency_ms']
@@ -91,6 +92,19 @@ class AssistantAgenticTurnServiceTest extends TestCase
                 && $context['exception'] === RequestException::class
                 && is_int($context['latency_ms']);
         });
+    }
+
+    public function test_fast_routing_failure_recovers_into_a_model_written_chat_reply(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['message' => 'Synthetic outage']], 503)
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Good to hear from you."}']]]]])]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Hello there');
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('Good to hear from you.', $result['message']);
+        Http::assertSentCount(2);
     }
 
     public function test_chat_reply_accepts_a_single_json_code_fence_from_gemini(): void

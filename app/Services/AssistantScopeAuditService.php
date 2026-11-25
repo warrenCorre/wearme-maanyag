@@ -53,7 +53,7 @@ class AssistantScopeAuditService
                 'trusted_pending_store_period' => in_array($pendingStorePeriod, ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year'], true) ? $pendingStorePeriod : null,
                 'trusted_previous_measure' => $tool === 'sales_summary' && $continuesSalesSummary ? 'sales_summary' : null,
             ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA, timeoutSeconds: $timeoutSeconds);
+            $raw = $this->geminiClient->generateText($input, self::INSTRUCTION, self::RESPONSE_SCHEMA, timeoutSeconds: $timeoutSeconds, retryTransient: true);
             $decoded = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
         } catch (ConnectionException|RequestException|RuntimeException|LogicException|JsonException $exception) {
             Log::warning('Assistant agentic provider failed', [
