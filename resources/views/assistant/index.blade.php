@@ -144,18 +144,20 @@
             </div>
 
             <template id="assistant-exchange-template">
-                <div class="flex justify-end gap-3">
-                    <div class="min-w-0 max-w-[85%] rounded-2xl rounded-tr-sm bg-slate-900 px-5 py-4 text-white shadow-sm sm:max-w-[75%]">
-                        <p class="text-xs font-black uppercase tracking-[0.14em] text-rose-200">You</p>
-                        <p data-assistant-question class="mt-2 wrap-break-word whitespace-pre-wrap text-sm font-medium leading-relaxed"></p>
+                <div data-assistant-exchange class="flex flex-col gap-6">
+                    <div class="flex justify-end gap-3">
+                        <div class="min-w-0 max-w-[85%] rounded-2xl rounded-tr-sm bg-slate-900 px-5 py-4 text-white shadow-sm sm:max-w-[75%]">
+                            <p class="text-xs font-black uppercase tracking-[0.14em] text-rose-200">You</p>
+                            <p data-assistant-question class="mt-2 wrap-break-word whitespace-pre-wrap text-sm font-medium leading-relaxed"></p>
+                        </div>
                     </div>
-                </div>
-                <div class="flex items-start gap-3" role="status">
-                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-slate-900 bg-rose-100 text-rose-600" aria-hidden="true">◌</span>
-                    <div data-assistant-result class="min-w-0 max-w-[85%] rounded-2xl rounded-tl-sm border-2 px-5 py-4 sm:max-w-[75%]">
-                        <p data-assistant-label class="text-xs font-black uppercase tracking-[0.14em]"></p>
-                        <p data-assistant-answer class="mt-3 wrap-break-word whitespace-pre-line text-sm font-medium leading-relaxed"></p>
-                        <div data-assistant-sources></div>
+                    <div class="flex items-start gap-3" role="status">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-slate-900 bg-rose-100 text-rose-600" aria-hidden="true">◌</span>
+                        <div data-assistant-result class="min-w-0 max-w-[85%] rounded-2xl rounded-tl-sm border-2 px-5 py-4 sm:max-w-[75%]">
+                            <p data-assistant-label class="text-xs font-black uppercase tracking-[0.14em]"></p>
+                            <p data-assistant-answer class="mt-3 wrap-break-word whitespace-pre-line text-sm font-medium leading-relaxed"></p>
+                            <div data-assistant-sources></div>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -205,7 +207,7 @@
         let assistantBusy = false;
 
         const appendAssistantExchange = (question, result) => {
-            const exchange = assistantTemplate.content.cloneNode(true);
+            const exchange = assistantTemplate.content.firstElementChild.cloneNode(true);
             const statuses = {
                 answered: ['Answer', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 social: ['Chat', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
@@ -218,7 +220,14 @@
                 unavailable: ['Temporarily unavailable', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
             };
             const [label, ...classes] = statuses[result.status] ?? statuses.unavailable;
+            const previous = assistantMessages.lastElementChild;
 
+            if (previous?.dataset.assistantStatus === 'unavailable'
+                && previous.querySelector('[data-assistant-question]')?.textContent === question) {
+                previous.remove();
+            }
+
+            exchange.dataset.assistantStatus = result.status;
             exchange.querySelector('[data-assistant-question]').textContent = question;
             exchange.querySelector('[data-assistant-label]').textContent = `Maanyag · ${label}`;
             exchange.querySelector('[data-assistant-answer]').textContent = result.message;
