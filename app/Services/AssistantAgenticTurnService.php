@@ -135,10 +135,6 @@ class AssistantAgenticTurnService
                 $validation = ['valid' => false, 'reason' => 'private_qualifier_removed', 'local_only' => false];
             }
 
-            if ($validation['valid'] && $name === 'sales_summary' && preg_match('/\b(?:by|per|each)\b/iu', $turn) === 1) {
-                $validation = ['valid' => false, 'reason' => 'unsupported_grouping', 'local_only' => false];
-            }
-
             if ($validation['valid']) {
                 $evidenceProblem = $this->evidenceProblem($name, $suppliedArguments, $arguments, $turn, $visitContext);
 

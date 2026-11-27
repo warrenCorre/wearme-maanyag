@@ -513,11 +513,28 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_offer":{"tool":"sales_summary"'));
     }
 
-    public function test_a_grouped_sales_request_cannot_silently_run_the_ungrouped_tool(): void
+    public function test_a_conversational_opener_does_not_turn_an_overall_sales_request_into_a_grouping(): void
     {
+        config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot split sales by cashier, but I can show the total this month. Want that?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"this_month"}}}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('By the way, how have sales been this month?', routingOnly: true);
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], 'By the way, how have sales been this month?')
+            && str_contains($request['input'], '"selected_tool":"sales_summary"'));
+    }
+
+    public function test_a_grouped_sales_request_cannot_silently_run_the_ungrouped_tool(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"I cannot split sales by cashier, but I can show the total this month. Want that?","offer_ungrouped":true,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
 
@@ -525,14 +542,17 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('offered_tool', $result['visit_context']['pending']);
         $this->assertSame(['period' => 'this_month'], $result['visit_context']['offer']['arguments']);
         Http::assertSentCount(2);
-        Http::assertSent(fn (Request $request): bool => str_contains(json_encode($request->data()), 'unsupported_grouping'));
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"selected_tool":"sales_summary"')
+            && str_contains($request['input'], 'Show sales by cashier this month?'));
     }
 
-    public function test_a_grouped_sales_offer_cannot_change_the_requested_period(): void
+    public function test_a_grouped_sales_offer_keeps_the_requested_period(): void
     {
+        config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Want last month instead?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"last_month"}}}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"I cannot split sales by cashier. Want the overall total this month?","offer_ungrouped":true,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
 

@@ -4149,6 +4149,40 @@
       ],
       "note": "Product names are not private.",
       "not_privacy_block": true
+    },
+    {
+      "id": "SCP-001",
+      "group": "store_scope.sales",
+      "lang": "en",
+      "turns": [
+        {
+          "say": "By the way, how have sales been this month?",
+          "expect": {
+            "outcome": "answer",
+            "tool": "sales_summary",
+            "args": {
+              "period": "this_month"
+            }
+          }
+        }
+      ],
+      "note": "A conversational opener is not a request to group sales."
+    },
+    {
+      "id": "SCP-002",
+      "group": "store_scope.sales",
+      "lang": "en",
+      "turns": [
+        {
+          "say": "Show sales by cashier this month?",
+          "expect": {
+            "outcome": "clarify",
+            "asks": "scope",
+            "retain": {}
+          }
+        }
+      ],
+      "note": "The current sales summary has no cashier breakdown; an overall total cannot silently replace it."
     }
   ]
 }
