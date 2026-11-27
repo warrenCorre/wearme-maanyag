@@ -97,7 +97,7 @@ class AssistantScopeAuditServiceTest extends TestCase
             && str_contains($request['input'], '"trusted_pending_store_period":"last_month"')
             && ! str_contains($request['input'], 'How did we do last month?')
             && ! str_contains($request['input'], 'total_sales')
-            && str_contains($request['system_instruction'], 'A broad mention of sales'));
+            && str_contains($request['system_instruction'], 'The pending period supplies no measure'));
     }
 
     public function test_a_clear_sales_total_can_use_the_validated_pending_store_period(): void

@@ -86,6 +86,36 @@ class AssistantEvalCommandTest extends TestCase
         $this->assertFalse($report['reply_quality_evaluated']);
     }
 
+    public function test_broad_current_store_question_is_scored_as_recorded_activity(): void
+    {
+        $this->createOwner();
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('answer')->times(9)->andReturnUsing(function (string $question): array {
+                if (str_contains($question, 'yesterday') || str_contains($question, 'kahapon')) {
+                    return ['status' => 'declined', 'message' => 'Only today is available.'];
+                }
+
+                return ['status' => 'evaluation', 'message' => '', 'evaluation' => [
+                    'tool' => 'recent_activity', 'args' => ['period' => 'today'],
+                ]];
+            });
+        });
+
+        $exit = Artisan::call('assistant:eval', [
+            '--flow' => 'agentic', '--group' => 'store_answer.recent_activity',
+            '--limit' => '9', '--phase' => '0', '--stub' => true, '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame(9, $report['cases']);
+        $this->assertSame(9, $report['passed']);
+        $this->assertSame('ACT-009', $report['turns'][8]['id']);
+        $this->assertSame('answer', $report['turns'][8]['outcome']);
+        $this->assertSame([], $report['failures']);
+        Http::assertNothingSent();
+    }
+
     public function test_unbounded_live_agentic_eval_is_rejected_before_provider_calls(): void
     {
         $this->createOwner();

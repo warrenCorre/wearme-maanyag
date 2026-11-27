@@ -69,7 +69,7 @@
             @endif
         </aside>
 
-        <section class="order-1 flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-[5px_5px_0_0_#0f172a] xl:order-2" aria-label="Assistant conversation">
+        <section class="order-1 flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-slate-900 bg-white shadow-[5px_5px_0_0_#0f172a] xl:sticky xl:top-4 xl:order-2 xl:h-[calc(100vh-2rem)] xl:self-start" aria-label="Assistant conversation">
             <header class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-amber-50/60 px-5 py-5 sm:px-7">
                 <div class="flex min-w-0 items-start gap-3">
                     <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-900 bg-rose-100 text-xl text-rose-600" aria-hidden="true">◌</span>
@@ -82,7 +82,7 @@
                 <a class="rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 xl:hidden" href="{{ route('assistant.index') }}">New Chat</a>
             </header>
 
-            <div id="assistant-messages" class="flex min-h-[28rem] flex-1 flex-col gap-6 bg-[#fcfcfb] px-5 py-7 sm:px-7 xl:min-h-[36rem]" aria-live="polite">
+            <div id="assistant-messages" class="flex min-h-[28rem] flex-1 flex-col gap-6 bg-[#fcfcfb] px-5 py-7 sm:px-7 xl:min-h-0 xl:overflow-y-auto" aria-live="polite">
                 @isset($result)
                     @php
                         $resultClasses = match ($result['status']) {
@@ -144,18 +144,20 @@
             </div>
 
             <template id="assistant-exchange-template">
-                <div class="flex justify-end gap-3">
-                    <div class="min-w-0 max-w-[85%] rounded-2xl rounded-tr-sm bg-slate-900 px-5 py-4 text-white shadow-sm sm:max-w-[75%]">
-                        <p class="text-xs font-black uppercase tracking-[0.14em] text-rose-200">You</p>
-                        <p data-assistant-question class="mt-2 wrap-break-word whitespace-pre-wrap text-sm font-medium leading-relaxed"></p>
+                <div data-assistant-exchange class="flex flex-col gap-6">
+                    <div class="flex justify-end gap-3">
+                        <div class="min-w-0 max-w-[85%] rounded-2xl rounded-tr-sm bg-slate-900 px-5 py-4 text-white shadow-sm sm:max-w-[75%]">
+                            <p class="text-xs font-black uppercase tracking-[0.14em] text-rose-200">You</p>
+                            <p data-assistant-question class="mt-2 wrap-break-word whitespace-pre-wrap text-sm font-medium leading-relaxed"></p>
+                        </div>
                     </div>
-                </div>
-                <div class="flex items-start gap-3" role="status">
-                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-slate-900 bg-rose-100 text-rose-600" aria-hidden="true">◌</span>
-                    <div data-assistant-result class="min-w-0 max-w-[85%] rounded-2xl rounded-tl-sm border-2 px-5 py-4 sm:max-w-[75%]">
-                        <p data-assistant-label class="text-xs font-black uppercase tracking-[0.14em]"></p>
-                        <p data-assistant-answer class="mt-3 wrap-break-word whitespace-pre-line text-sm font-medium leading-relaxed"></p>
-                        <div data-assistant-sources></div>
+                    <div class="flex items-start gap-3" role="status">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-slate-900 bg-rose-100 text-rose-600" aria-hidden="true">◌</span>
+                        <div data-assistant-result class="min-w-0 max-w-[85%] rounded-2xl rounded-tl-sm border-2 px-5 py-4 sm:max-w-[75%]">
+                            <p data-assistant-label class="text-xs font-black uppercase tracking-[0.14em]"></p>
+                            <p data-assistant-answer class="mt-3 wrap-break-word whitespace-pre-line text-sm font-medium leading-relaxed"></p>
+                            <div data-assistant-sources></div>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -205,7 +207,7 @@
         let assistantBusy = false;
 
         const appendAssistantExchange = (question, result) => {
-            const exchange = assistantTemplate.content.cloneNode(true);
+            const exchange = assistantTemplate.content.firstElementChild.cloneNode(true);
             const statuses = {
                 answered: ['Answer', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
                 social: ['Chat', 'border-emerald-700', 'bg-emerald-50', 'text-emerald-950'],
@@ -218,7 +220,14 @@
                 unavailable: ['Temporarily unavailable', 'border-slate-400', 'bg-slate-50', 'text-slate-800'],
             };
             const [label, ...classes] = statuses[result.status] ?? statuses.unavailable;
+            const previous = assistantMessages.lastElementChild;
 
+            if (previous?.dataset.assistantStatus === 'unavailable'
+                && previous.querySelector('[data-assistant-question]')?.textContent === question) {
+                previous.remove();
+            }
+
+            exchange.dataset.assistantStatus = result.status;
             exchange.querySelector('[data-assistant-question]').textContent = question;
             exchange.querySelector('[data-assistant-label]').textContent = `Maanyag · ${label}`;
             exchange.querySelector('[data-assistant-answer]').textContent = result.message;
@@ -237,7 +246,6 @@
 
             document.getElementById('assistant-welcome')?.remove();
             assistantMessages.appendChild(exchange);
-            assistantMessages.lastElementChild.scrollIntoView({ block: 'nearest' });
         };
 
         for (const form of assistantForms) {
@@ -280,15 +288,29 @@
 
                     const { result } = await response.json();
                     appendAssistantExchange(question, result);
-                    assistantQuestion.value = '';
+                    if (result.status === 'unavailable') {
+                        if (assistantQuestion.value.trim() === '') {
+                            assistantQuestion.value = question;
+                        }
+                    } else if (assistantQuestion.value.trim() === question) {
+                        assistantQuestion.value = '';
+                    }
                 } catch {
                     appendAssistantExchange(question, {
                         status: 'unavailable',
-                        message: 'The assistant is temporarily unavailable. Please try again.',
+                        message: 'Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.',
                     });
+                    if (assistantQuestion.value.trim() === '') {
+                        assistantQuestion.value = question;
+                    }
                 } finally {
                     assistantBusy = false;
-                    assistantQuestion.focus();
+                    assistantQuestion.focus({ preventScroll: true });
+                    if (getComputedStyle(assistantMessages).overflowY === 'auto') {
+                        assistantMessages.scrollTop = assistantMessages.scrollHeight;
+                    } else {
+                        assistantMessages.lastElementChild?.scrollIntoView({ block: 'center' });
+                    }
                 }
             });
         }

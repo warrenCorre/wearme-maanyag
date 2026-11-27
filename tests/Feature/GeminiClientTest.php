@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Providers\AppServiceProvider;
 use App\Services\GeminiClient;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -94,6 +95,35 @@ class GeminiClientTest extends TestCase
         $this->assertSame('model_output', $steps[0]['type']);
         Http::assertSentCount(2);
         Sleep::assertSleptTimes(1);
+    }
+
+    public function test_agentic_request_retries_one_fast_connection_failure_within_its_budget(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->pushFailedConnection('Synthetic connection failure')
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Synthetic reply.']]]]])]);
+
+        $answer = app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 7, retryTransient: true);
+
+        $this->assertSame('Synthetic reply.', $answer);
+        Http::assertSentCount(2);
+        Sleep::assertSleptTimes(1);
+    }
+
+    public function test_agentic_request_does_not_retry_connection_failure_when_budget_is_too_short(): void
+    {
+        Sleep::fake();
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::failedConnection('Synthetic connection failure')]);
+
+        $this->expectException(ConnectionException::class);
+
+        try {
+            app(GeminiClient::class)->generateText('Fictional question', timeoutSeconds: 2, retryTransient: true);
+        } finally {
+            Http::assertSentCount(1);
+            Sleep::assertSleptTimes(0);
+        }
     }
 
     public function test_agentic_text_request_retries_a_429_only_with_a_short_explicit_delay(): void
