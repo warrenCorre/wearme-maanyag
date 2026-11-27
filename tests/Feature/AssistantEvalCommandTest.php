@@ -155,7 +155,7 @@ class AssistantEvalCommandTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_the_first_sales_followup_eval_scores_goal_then_period_then_answer(): void
+    public function test_period_first_sales_followup_eval_requires_the_period_through_to_the_answer(): void
     {
         $this->createOwner();
         config([
@@ -166,7 +166,7 @@ class AssistantEvalCommandTest extends TestCase
         ]);
         Http::preventStrayRequests();
         Http::fakeSequence('generativelanguage.googleapis.com/*')
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Are you looking for sales totals or best sellers?","pending":"sales_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"What period would you like for sales?","pending":"sales_period"}']]]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which reporting period would you like?","pending":"sales_period"}']]]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'yesterday', 'metric_evidence' => '', 'period_evidence' => 'Yesterday']]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);

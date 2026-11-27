@@ -2545,7 +2545,7 @@
           "say": "Sales?",
           "expect": {
             "outcome": "clarify",
-            "asks": "metric",
+            "asks": "period",
             "retain": {}
           }
         },
