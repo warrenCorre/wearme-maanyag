@@ -116,6 +116,35 @@ class AssistantEvalCommandTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_sales_scope_cases_distinguish_a_conversational_opener_from_a_cashier_breakdown(): void
+    {
+        $this->createOwner();
+        $this->mock(AssistantAnswerService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('answer')->twice()->andReturnUsing(function (string $question): array {
+                if ($question === 'By the way, how have sales been this month?') {
+                    return ['status' => 'evaluation', 'message' => '', 'evaluation' => [
+                        'tool' => 'sales_summary', 'args' => ['period' => 'this_month'],
+                    ]];
+                }
+
+                return ['status' => 'clarification', 'message' => 'I cannot split sales by cashier. Want the overall total?', 'visit_context' => ['pending' => 'scope_goal']];
+            });
+        });
+
+        $exit = Artisan::call('assistant:eval', [
+            '--flow' => 'agentic', '--group' => 'store_scope.sales',
+            '--limit' => '2', '--phase' => '0', '--stub' => true, '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame(2, $report['cases']);
+        $this->assertSame(2, $report['passed']);
+        $this->assertSame(['SCP-001', 'SCP-002'], array_column($report['turns'], 'id'));
+        $this->assertSame([], $report['failures']);
+        Http::assertNothingSent();
+    }
+
     public function test_unbounded_live_agentic_eval_is_rejected_before_provider_calls(): void
     {
         $this->createOwner();

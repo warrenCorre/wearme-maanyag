@@ -327,14 +327,15 @@ class AssistantAgenticTurnServiceTest extends TestCase
 
     public function test_invalid_clarification_period_is_not_kept_as_visit_context(): void
     {
-        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
-            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area?","pending":"store_goal","period":"some_day"}']]]],
-        ])]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which store area?","pending":"store_goal","period":"some_day"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Which part of the shop would you like to check?","pending":"store_goal"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('How did the shop do?');
 
         $this->assertSame('clarification', $result['status']);
         $this->assertSame(['pending' => 'store_goal'], $result['visit_context']);
+        Http::assertSentCount(2);
     }
 
     public function test_a_tool_call_cannot_invent_a_store_measure_missing_from_the_turn(): void
@@ -513,11 +514,28 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains($request['input'][0]['content'][0]['text'], '"pending_offer":{"tool":"sales_summary"'));
     }
 
-    public function test_a_grouped_sales_request_cannot_silently_run_the_ungrouped_tool(): void
+    public function test_a_conversational_opener_does_not_turn_an_overall_sales_request_into_a_grouping(): void
     {
+        config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot split sales by cashier, but I can show the total this month. Want that?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"this_month"}}}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('By the way, how have sales been this month?', routingOnly: true);
+
+        $this->assertSame(['tool' => 'sales_summary', 'args' => ['period' => 'this_month']], $result['evaluation']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], 'By the way, how have sales been this month?')
+            && str_contains($request['input'], '"selected_tool":"sales_summary"'));
+    }
+
+    public function test_a_grouped_sales_request_cannot_silently_run_the_ungrouped_tool(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"I cannot split sales by cashier, but I can show the total this month. Want that?","offer_ungrouped":true,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
 
@@ -525,14 +543,64 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('offered_tool', $result['visit_context']['pending']);
         $this->assertSame(['period' => 'this_month'], $result['visit_context']['offer']['arguments']);
         Http::assertSentCount(2);
-        Http::assertSent(fn (Request $request): bool => str_contains(json_encode($request->data()), 'unsupported_grouping'));
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"selected_tool":"sales_summary"')
+            && str_contains($request['input'], 'Show sales by cashier this month?'));
     }
 
-    public function test_a_grouped_sales_offer_cannot_change_the_requested_period(): void
+    public function test_an_unparseable_direct_reply_recovers_with_a_screened_scope_clarification(): void
     {
         Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'I cannot split that request.']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot break sales down by cashier. Could you ask for the overall total instead?","pending":"scope_goal"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('I cannot break sales down by cashier. Could you ask for the overall total instead?', $result['message']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"current_screened_turn":"Show sales by cashier this month?"')
+            && str_contains($request['input'], '"approved_read_only_tools"')
+            && ! str_contains($request['input'], 'screened_public_chat_history')
+            && ! isset($request['tools'])
+            && $request['store'] === false);
+    }
+
+    public function test_an_unparseable_social_reply_recovers_as_chat_without_a_store_clarification(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Hello there!']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"chat","reply":"Hey, I am here with you.","pending":"none"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Hey there');
+
+        $this->assertSame('general_chat', $result['status']);
+        $this->assertSame('Hey, I am here with you.', $result['message']);
+        $this->assertSame('Hey there', $result['visit_context']['chat_history'][0]['turn']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_an_invalid_recovery_reply_is_unavailable_without_store_facts(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Unstructured response']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":123,"pending":"scope_goal"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
+
+        $this->assertSame('unavailable', $result['status']);
+        $this->assertSame('Sorry, I’m having trouble continuing our chat right now. Please try again in a moment.', $result['message']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_grouped_sales_offer_keeps_the_requested_period(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
-            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Want last month instead?","pending":"offered_tool","offer":{"tool":"sales_summary","arguments":{"period":"last_month"}}}']]]]]);
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"I cannot split sales by cashier. Want the overall total this month?","offer_ungrouped":true,"language":"en"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
 
@@ -543,14 +611,16 @@ class AssistantAgenticTurnServiceTest extends TestCase
 
     public function test_a_model_cannot_offer_an_individual_sale_as_an_implicit_follow_up(): void
     {
-        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
-            'status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Want the latest sale?","pending":"offered_tool","offer":{"tool":"latest_unpaid_sale","arguments":{}}}']]]],
-        ])]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Want the latest sale?","pending":"offered_tool","offer":{"tool":"latest_unpaid_sale","arguments":{}}}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot provide sales by cashier. What supported store summary would you like?","pending":"scope_goal"}']]]]]);
 
         $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
 
         $this->assertSame('clarification', $result['status']);
-        $this->assertSame(['pending' => 'store_goal'], $result['visit_context']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        $this->assertStringNotContainsString('latest sale', $result['message']);
+        Http::assertSentCount(2);
     }
 
     public function test_scope_audit_rejects_a_category_qualifier_dropped_by_a_valid_tool_call(): void
@@ -565,6 +635,145 @@ class AssistantAgenticTurnServiceTest extends TestCase
         $this->assertSame('clarification', $result['status']);
         $this->assertSame(['pending' => 'offered_tool', 'offer' => ['tool' => 'low_stock', 'arguments' => []], 'reply_language' => 'en'], $result['visit_context']);
         Http::assertSentCount(2);
+    }
+
+    public function test_an_english_scope_offer_is_corrected_when_the_auditor_replies_in_cebuano(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"Dili namo makita ang sales kada cashier karon. Gusto ba nimo tan-awon ang kinatibuk-ang sales karong bulana?","offer_ungrouped":true,"language":"ceb"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"I cannot break sales down by cashier. Would you like the overall sales total this month?"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('I cannot break sales down by cashier. Would you like the overall sales total this month?', $result['message']);
+        $this->assertSame('en', $result['visit_context']['reply_language']);
+        $this->assertSame('offered_tool', $result['visit_context']['pending']);
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"requested_language":"en"')
+            && str_contains($request['input'], '"unsupported_part":"by cashier"')
+            && ! str_contains($request['input'], 'Dili namo makita')
+            && $request['store'] === false);
+    }
+
+    public function test_the_independent_audit_can_accept_only_a_validated_pending_public_offer(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Yes, please.', visitContext: [
+            'pending' => 'offered_tool',
+            'offer' => ['tool' => 'sales_summary', 'arguments' => ['period' => 'this_month']],
+        ]);
+
+        $this->assertSame('answered', $result['status']);
+        $this->assertSame('sales', $result['sources'][0]['type']);
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"trusted_pending_offer":{"tool":"sales_summary"')
+            && ! isset($request['tools'])
+            && $request['store'] === false);
+    }
+
+    public function test_a_direct_clarification_offer_is_reconciled_without_using_a_wording_list(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot split sales by cashier, but I can show the overall sales summary for this month. Want that instead?","pending":"scope_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"tool":"sales_summary","evidence":"overall sales summary for this month","period_evidence":"this month"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
+        $service = app(AssistantAgenticTurnService::class);
+
+        $first = $service->answer('Show sales by cashier this month?');
+        $second = $service->answer('Yes, please.', visitContext: $first['visit_context']);
+
+        $this->assertSame('clarification', $first['status']);
+        $this->assertSame(['pending' => 'offered_tool', 'offer' => ['tool' => 'sales_summary', 'arguments' => ['period' => 'this_month']], 'reply_language' => 'en'], $first['visit_context']);
+        $this->assertSame('answered', $second['status']);
+        $this->assertSame('sales', $second['sources'][0]['type']);
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"assistant_clarification"')
+            && str_contains($request['input'], '"approved_read_only_tools"')
+            && ! str_contains($request['input'], 'total_sales')
+            && $request['store'] === false);
+    }
+
+    public function test_a_clarification_without_an_explicit_public_offer_stays_a_scope_question(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot provide that cashier breakdown. Could you ask for a supported store summary?","pending":"scope_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"tool":"none","evidence":"","period_evidence":""}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_an_offered_individual_detail_cannot_be_reconciled_as_a_public_tool(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I can show the latest unpaid sale instead. Want that?","pending":"scope_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"tool":"latest_unpaid_sale","evidence":"latest unpaid sale","period_evidence":""}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_changed_or_filtered_follow_up_cannot_execute_the_pending_offer(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"I cannot provide a cashier breakdown.","offer_ungrouped":false,"language":"en"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"I cannot break that down by cashier. Would you like the overall total?","pending":"scope_goal"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Yes, please, but by cashier.', visitContext: [
+            'pending' => 'offered_tool',
+            'offer' => ['tool' => 'sales_summary', 'arguments' => ['period' => 'this_month']],
+        ]);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame(['pending' => 'scope_goal'], $result['visit_context']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_private_follow_up_cannot_consume_a_pending_public_offer(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fake();
+
+        $result = app(AssistantAgenticTurnService::class)->answer('My password is secret123. Yes, please.', visitContext: [
+            'pending' => 'offered_tool',
+            'offer' => ['tool' => 'sales_summary', 'arguments' => ['period' => 'this_month']],
+        ]);
+
+        $this->assertNotSame('answered', $result['status']);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_failed_scope_language_correction_uses_a_safe_english_fallback(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"Dili namo makita ang sales kada cashier karon. Gusto ba nimo tan-awon ang kinatibuk-ang sales karong bulana?","offer_ungrouped":true,"language":"ceb"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Dili namo makita ang sales kada cashier karon."}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('I cannot verify “by cashier” with this store summary. Please restate the full question for an overall view.', $result['message']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'en'], $result['visit_context']);
+        Http::assertSentCount(3);
     }
 
     public function test_scope_audit_accepts_a_complete_sales_tool_call(): void
@@ -648,6 +857,7 @@ class AssistantAgenticTurnServiceTest extends TestCase
     {
         config(['assistant.agentic_scope_audit' => true]);
         Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"sales","clarification":"You asked about sales instead.","offer_ungrouped":false,"language":"en"}']]]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
             ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":true,"uncovered":"","clarification":"","offer_ungrouped":false,"language":"en"}']]]]]);
 
