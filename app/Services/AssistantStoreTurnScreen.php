@@ -57,6 +57,23 @@ class AssistantStoreTurnScreen
         'last year' => 'last year|(?:niaging|miaging) tuig',
     ];
 
+    public function screenPeriodQuote(string $quote): ?string
+    {
+        $quote = trim(preg_replace('/\s+/u', ' ', mb_strtolower($quote)) ?? '');
+
+        if ($quote === '' || mb_strlen($quote) > 80) {
+            return null;
+        }
+
+        foreach (self::NATURAL_PERIODS as $period => $pattern) {
+            if (preg_match('/\A(?:'.$pattern.')\z/uD', $quote) === 1) {
+                return str_replace(' ', '_', $period);
+            }
+        }
+
+        return null;
+    }
+
     private const NATURAL_UNSAFE_TERMS = '/\b(?:'
         .'add|create|record|update|edit|change|delete|remove|archive|settle|pay|mark|execute|reveal|print|download|export|'
         .'sql|database|credentials|adjustments?|damaged?|individual|specific|'

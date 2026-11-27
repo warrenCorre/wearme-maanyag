@@ -403,4 +403,17 @@ class AssistantStoreTurnScreenTest extends TestCase
             $this->assertNull($screen->screenSalesFollowUp($question), $question);
         }
     }
+
+    public function test_a_quoted_period_must_be_one_complete_supported_window(): void
+    {
+        $screen = new AssistantStoreTurnScreen;
+
+        $this->assertSame('this_month', $screen->screenPeriodQuote(' Karong   BULAN '));
+        $this->assertSame('last_month', $screen->screenPeriodQuote('niaging bulan'));
+        $this->assertSame('this_month', $screen->screenPeriodQuote('this month'));
+
+        foreach (['', 'bulan', 'this month and last month', 'next month', 'karong bulan for cashier', str_repeat('a', 81)] as $quote) {
+            $this->assertNull($screen->screenPeriodQuote($quote), $quote);
+        }
+    }
 }

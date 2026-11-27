@@ -617,9 +617,7 @@ class AssistantAgenticTurnService
                 && mb_strlen($decoded['period_evidence']) <= 80
                 && mb_stripos($turn, trim($decoded['period_evidence'])) !== false
                 && mb_stripos($reply, trim($decoded['period_evidence'])) !== false) {
-                $screened = $this->storeTurnScreen->screenSalesFollowUp('what about '.trim($decoded['period_evidence']));
-                $period = $screened !== null
-                    ? $this->trustedPeriod(['period' => str_replace(' ', '_', $screened['period'])]) : null;
+                $period = $this->trustedPeriod(['period' => $this->storeTurnScreen->screenPeriodQuote($decoded['period_evidence'])]);
 
                 return $period !== null
                     ? $this->validatedOffer(['tool' => $tool['name'], 'arguments' => ['period' => $period]]) : null;
