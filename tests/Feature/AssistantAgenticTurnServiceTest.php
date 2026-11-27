@@ -637,6 +637,44 @@ class AssistantAgenticTurnServiceTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_an_english_scope_offer_is_corrected_when_the_auditor_replies_in_cebuano(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"Dili namo makita ang sales kada cashier karon. Gusto ba nimo tan-awon ang kinatibuk-ang sales karong bulana?","offer_ungrouped":true,"language":"ceb"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"I cannot break sales down by cashier. Would you like the overall sales total this month?"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('I cannot break sales down by cashier. Would you like the overall sales total this month?', $result['message']);
+        $this->assertSame('en', $result['visit_context']['reply_language']);
+        $this->assertSame('offered_tool', $result['visit_context']['pending']);
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $request): bool => is_string($request['input'] ?? null)
+            && str_contains($request['input'], '"requested_language":"en"')
+            && str_contains($request['input'], '"unsupported_part":"by cashier"')
+            && ! str_contains($request['input'], 'Dili namo makita')
+            && $request['store'] === false);
+    }
+
+    public function test_a_failed_scope_language_correction_uses_a_safe_english_fallback(): void
+    {
+        config(['assistant.agentic_scope_audit' => true]);
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'function_call', 'id' => 'call_sales', 'name' => 'sales_summary', 'arguments' => ['period' => 'this_month', 'metric_evidence' => 'sales', 'period_evidence' => 'this month']]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"covered":false,"uncovered":"by cashier","clarification":"Dili namo makita ang sales kada cashier karon. Gusto ba nimo tan-awon ang kinatibuk-ang sales karong bulana?","offer_ungrouped":true,"language":"ceb"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"reply":"Dili namo makita ang sales kada cashier karon."}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Show sales by cashier this month?', routingOnly: true);
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('I cannot verify “by cashier” with this store summary. Please restate the full question for an overall view.', $result['message']);
+        $this->assertSame(['pending' => 'scope_goal', 'reply_language' => 'en'], $result['visit_context']);
+        Http::assertSentCount(3);
+    }
+
     public function test_scope_audit_accepts_a_complete_sales_tool_call(): void
     {
         config(['assistant.agentic_scope_audit' => true]);
