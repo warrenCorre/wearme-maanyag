@@ -703,6 +703,20 @@ class AssistantAgenticTurnServiceTest extends TestCase
             && $request['store'] === false);
     }
 
+    public function test_a_cebuano_period_in_a_direct_offer_is_kept_for_a_confirmation(): void
+    {
+        Http::fakeSequence()
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"kind":"clarification","reply":"Dili nako mahatag ang sales kada cashier. Gusto ba nimo ang kinatibuk-ang sales karong bulan?","pending":"scope_goal"}']]]]])
+            ->push(['status' => 'completed', 'steps' => [['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"tool":"sales_summary","evidence":"kinatibuk-ang sales karong bulan","period_evidence":"karong bulan"}']]]]]);
+
+        $result = app(AssistantAgenticTurnService::class)->answer('Pila ang sales kada cashier karong bulan?');
+
+        $this->assertSame('clarification', $result['status']);
+        $this->assertSame('offered_tool', $result['visit_context']['pending']);
+        $this->assertSame(['tool' => 'sales_summary', 'arguments' => ['period' => 'this_month']], $result['visit_context']['offer']);
+        Http::assertSentCount(2);
+    }
+
     public function test_a_clarification_without_an_explicit_public_offer_stays_a_scope_question(): void
     {
         Http::fakeSequence()
